@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NEED FOR SPEED: REBORN | LEGION STUDIOS</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#030806;color:#9aff65;font-family:Arial,sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh}
+header{width:100%;padding:12px 18px;border-bottom:1px solid #24552c;background:#06110a}a{color:#9aff65}h1{font-size:16px;letter-spacing:2px;margin:0}
+main{width:min(96vw,680px);padding:14px}canvas{display:block;margin:auto;max-width:100%;height:auto;border:1px solid #377b38;box-shadow:0 0 24px #143d1d;background:#050908;touch-action:none}
+.note{color:#9bb99b;font-size:12px;text-align:center;line-height:1.5}
+</style></head><body><header><h1>NEED FOR SPEED: REBORN</h1></header><main><canvas id="gameCanvas" width="400" height="400" tabindex="0"></canvas><p class="note">Click the game to focus it. Keyboard controls are shown in the game.</p></main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/processing.js/1.6.6/processing.min.js"></script>
+<script>
+var sketchProc = function(processing) {
+  with (processing) {
+    size(400, 400);
+    frameRate(60);
+var cars = [
+    {name:"VORTEX GT", r:55,g:220,b:201, speed:8.8, handling:8.3, shape:0},
+    {name:"NOVA RS", r:238,g:66,b:97, speed:9.2, handling:7.4, shape:1},
+    {name:"KATANA ZX", r:245,g:174,b:58, speed:8.1, handling:9.1, shape:2},
+    {name:"PHANTOM LX", r:160,g:218,b:94, speed:8.6, handling:7.6, shape:3},
+    {name:"TURBO V6", r:145,g:112,b:245, speed:8.3, handling:8.4, shape:1},
+    {name:"APEX 200", r:70,g:153,b:239, speed:7.7, handling:9.4, shape:2},
+    {name:"BANSHEE R", r:235,g:91,b:63, speed:9.4, handling:6.8, shape:3},
+    {name:"SILVERLINE", r:194,g:200,b:211, speed:8.0, handling:8.0, shape:0},
+    {name:"REDLINE XR", r:232,g:48,b:61, speed:8.4, handling:8.5, shape:1},
+    {name:"COBRA 5.0", r:208,g:132,b:63, speed:9.0, handling:7.0, shape:3},
+    {name:"ORBIT GTS", r:53,g:192,b:223, speed:8.7, handling:9.0, shape:2},
+    {name:"MIRAGE GT-R", r:220,g:90,b:177, speed:8.9, handling:8.1, shape:0},
+    {name:"NIGHTHAWK", r:112,g:132,b:157, speed:7.9, handling:7.9, shape:3},
+    {name:"VECTOR 9", r:92,g:218,b:120, speed:9.5, handling:8.2, shape:2},
+    {name:"STREETFOX", r:220,g:201,b:55, speed:7.8, handling:8.8, shape:1},
+    {name:"FIREBIRD GT", r:239,g:85,b:45, speed:8.7, handling:7.1, shape:3},
+    {name:"ZENITH R", r:196,g:143,b:226, speed:9.0, handling:8.9, shape:0},
+    {name:"GHOST RS", r:181,g:197,b:181, speed:8.2, handling:8.0, shape:2},
+    {name:"BULLET XR", r:207,g:61,b:102, speed:9.3, handling:8.7, shape:1},
+    {name:"MIDNIGHT 7", r:58,g:205,b:151, speed:8.8, handling:9.0, shape:0}
+];
+
+var selectedCar = 0;
+var scene = "garage";
+var keys = {left:false, right:false, gas:false, brake:false};
+var carX = 200;
+var speed = 115;
+var distance = 0;
+var roadScroll = 0;
+var spawnClock = 0;
+var traffic = [];
+var passes = 0;
+
+var drawCar = function(x, y, w, h, carIndex, facingDown) {
+    var car = cars[carIndex];
+    pushMatrix();
+    translate(x,y);
+    if (facingDown) { rotate(180); }
+    noStroke();
+    fill(0,0,0,85); ellipse(2,h*0.04,w*0.85,h*0.9);
+    fill(7,9,13);
+    ellipse(-w*0.38,-h*0.25,w*0.2,h*0.23); ellipse(w*0.38,-h*0.25,w*0.2,h*0.23);
+    ellipse(-w*0.38,h*0.25,w*0.2,h*0.23); ellipse(w*0.38,h*0.25,w*0.2,h*0.23);
+    fill(105,112,119);
+    ellipse(-w*0.38,-h*0.25,w*0.07,h*0.1); ellipse(w*0.38,-h*0.25,w*0.07,h*0.1);
+    ellipse(-w*0.38,h*0.25,w*0.07,h*0.1); ellipse(w*0.38,h*0.25,w*0.07,h*0.1);
+
+    fill(5,7,12);
+    beginShape();
+    if (car.shape===0) {
+        vertex(-w*0.16,-h*0.5); vertex(w*0.16,-h*0.5); vertex(w*0.34,-h*0.4); vertex(w*0.4,-h*0.15);
+        vertex(w*0.38,h*0.3); vertex(w*0.3,h*0.46); vertex(-w*0.3,h*0.46); vertex(-w*0.38,h*0.3);
+        vertex(-w*0.4,-h*0.15); vertex(-w*0.34,-h*0.4);
+    } else if (car.shape===1) {
+        vertex(-w*0.21,-h*0.5); vertex(w*0.21,-h*0.5); vertex(w*0.35,-h*0.39); vertex(w*0.41,-h*0.1);
+        vertex(w*0.4,h*0.36); vertex(w*0.29,h*0.47); vertex(-w*0.29,h*0.47); vertex(-w*0.4,h*0.36);
+        vertex(-w*0.41,-h*0.1); vertex(-w*0.35,-h*0.39);
+    } else if (car.shape===2) {
+        vertex(-w*0.17,-h*0.5); vertex(w*0.17,-h*0.5); vertex(w*0.31,-h*0.43); vertex(w*0.38,-h*0.2);
+        vertex(w*0.41,h*0.26); vertex(w*0.34,h*0.47); vertex(-w*0.34,h*0.47); vertex(-w*0.41,h*0.26);
+        vertex(-w*0.38,-h*0.2); vertex(-w*0.31,-h*0.43);
+    } else {
+        vertex(-w*0.23,-h*0.47); vertex(w*0.23,-h*0.47); vertex(w*0.37,-h*0.39); vertex(w*0.43,-h*0.13);
+        vertex(w*0.43,h*0.33); vertex(w*0.34,h*0.48); vertex(-w*0.34,h*0.48); vertex(-w*0.43,h*0.33);
+        vertex(-w*0.43,-h*0.13); vertex(-w*0.37,-h*0.39);
+    }
+    endShape(CLOSE);
+    fill(car.r,car.g,car.b);
+    beginShape();
+    vertex(-w*0.15,-h*0.48); vertex(w*0.15,-h*0.48); vertex(w*0.29,-h*0.38); vertex(w*0.35,-h*0.14);
+    vertex(w*0.34,h*0.28); vertex(w*0.26,h*0.42); vertex(-w*0.26,h*0.42); vertex(-w*0.34,h*0.28);
+    vertex(-w*0.35,-h*0.14); vertex(-w*0.29,-h*0.38);
+    endShape(CLOSE);
+    fill(255,255,255,42);
+    quad(-w*0.22,-h*0.4,w*0.22,-h*0.4,w*0.26,-h*0.23,-w*0.26,-h*0.23);
+    fill(19,35,46);
+    quad(-w*0.24,-h*0.17,-w*0.18,-h*0.34,w*0.18,-h*0.34,w*0.24,-h*0.17);
+    quad(-w*0.2,h*0.05,-w*0.17,h*0.22,w*0.17,h*0.22,w*0.2,h*0.05);
+    fill(177,211,218,175);
+    quad(-w*0.19,-h*0.19,-w*0.15,-h*0.3,w*0.15,-h*0.3,w*0.19,-h*0.19);
+    fill(235,240,240); rect(-w*0.28,-h*0.46,w*0.13,h*0.035); rect(w*0.15,-h*0.46,w*0.13,h*0.035);
+    fill(255,74,86); rect(-w*0.27,h*0.38,w*0.14,h*0.04); rect(w*0.13,h*0.38,w*0.14,h*0.04);
+    fill(16,22,29); rect(-w*0.08,-h*0.45,w*0.16,h*0.025); rect(-w*0.2,h*0.43,w*0.4,h*0.025);
+    fill(car.r,car.g,car.b); rect(-w*0.43,-h*0.13,w*0.1,h*0.07); rect(w*0.33,-h*0.13,w*0.1,h*0.07);
+    stroke(25,35,44); strokeWeight(1); line(-w*0.27,-h*0.07,-w*0.27,h*0.26); line(w*0.27,-h*0.07,w*0.27,h*0.26);
+    noStroke(); popMatrix();
+};
+
+var drawGarage = function() {
+    background(13,15,25);
+    fill(34,25,43); rect(0,0,400,145);
+    fill(91,42,65); rect(0,90,400,55);
+    for (var i=0;i<22;i++) {
+        var bx=(i*73+12)%400, bh=20+(i*31)%58;
+        fill(19,21,34); rect(bx,145-bh,15+(i*9)%18,bh);
+        fill(83,150,151); rect(bx+4,145-bh+9,3,4);
+    }
+    fill(18,20,28); quad(168,138,232,138,365,400,35,400);
+    stroke(244,81,119); strokeWeight(2); line(168,138,35,400); line(232,138,365,400);
+    stroke(180,183,190); line(200,140,200,400); noStroke();
+    fill(244,246,239); textAlign(CENTER,CENTER); textSize(17); text("NEED FOR SPEED: REBORN",200,21);
+    fill(83,240,221); textSize(8); text("CHOOSE A CAR",200,41);
+    drawCar(200,99,48,77,selectedCar,false);
+    fill(cars[selectedCar].r,cars[selectedCar].g,cars[selectedCar].b);
+    textSize(12); text(cars[selectedCar].name,200,145);
+    fill(202,206,215); textSize(7); text("SPEED "+cars[selectedCar].speed+"    HANDLING "+cars[selectedCar].handling,200,157);
+    for (var j=0;j<cars.length;j++) {
+        var col=j%4, row=floor(j/4), x=8+col*97, y=169+row*29;
+        if (j===selectedCar) { fill(31,63,64); stroke(83,240,221); }
+        else { fill(22,24,34); stroke(61,64,77); }
+        strokeWeight(1); rect(x,y,91,25);
+        noStroke(); fill(cars[j].r,cars[j].g,cars[j].b); rect(x+5,y+5,3,15);
+        fill(245,245,240); textAlign(LEFT,CENTER); textSize(8); text(cars[j].name,x+12,y+13);
+    }
+    noStroke(); fill(83,240,221); rect(75,321,250,32);
+    fill(10,17,20); textAlign(CENTER,CENTER); textSize(13); text("START RACE",200,337);
+    fill(198,201,210); textSize(7); text("← → STEER     ↑ GAS     ↓ BRAKE",200,373);
+};
+
+var roadCenter = function(z) { return 200+sin(frameCount+z*20)*z*8; };
+var roadHalf = function(z) { return 33+z*112; };
+
+var drawRoad = function() {
+    background(14,17,28);
+    fill(63,35,57); rect(0,0,400,120);
+    fill(238,150,111); ellipse(320,63,25,25);
+    for (var i=0;i<30;i++) {
+        var bx=(i*51+17)%400, bh=20+(i*37)%76;
+        fill(22,23,37); rect(bx,125-bh,13+(i*7)%22,bh);
+        fill(255,158,108); rect(bx+4,130-bh,3,4);
+    }
+    fill(27,28,37); quad(162,121,238,121,380,400,20,400);
+    fill(49,48,56); quad(169,121,231,121,358,400,42,400);
+    fill(22,25,32); quad(176,121,224,121,338,400,62,400);
+    stroke(244,82,120); strokeWeight(2); line(169,121,42,400); line(231,121,358,400);
+    var shift=roadScroll%48;
+    for (var d=0;d<6;d++) {
+        var z=(d/6+shift/48)%1, y=121+z*z*279, half=roadHalf(z), cx=roadCenter(z), dash=2+z*7;
+        fill(220,220,213); noStroke(); rect(cx-half/3-dash/2,y,dash,4+z*11); rect(cx+half/3-dash/2,y,dash,4+z*11);
+    }
+};
+
+var newRace = function() {
+    scene="race"; carX=200; speed=115; distance=0; passes=0; roadScroll=0; traffic=[]; spawnClock=30;
+};
+var updateRace = function() {
+    if (keys.gas) { speed=speed+3; if (speed>300) { speed=300; } }
+    else if (speed>110) { speed=speed-1; }
+    if (keys.brake) { speed=speed-4; if (speed<55) { speed=55; } }
+    if (keys.left) { carX=carX-4; }
+    if (keys.right) { carX=carX+4; }
+    if (carX<82) { carX=82; } if (carX>318) { carX=318; }
+    roadScroll=roadScroll+speed*0.07; distance=distance+speed/216000;
+    spawnClock=spawnClock-1;
+    if (spawnClock<=0) {
+        traffic.push({z:0.02,lane:floor(random(0,3))-1,car:floor(random(0,cars.length)),passed:false});
+        spawnClock=75;
+    }
+    var remaining=[];
+    for (var i=0;i<traffic.length;i++) {
+        var ob=traffic[i]; ob.z=ob.z+0.008+speed*0.000085;
+        var x=roadCenter(ob.z)+ob.lane*roadHalf(ob.z)*0.57;
+        if (ob.z>0.73 && ob.z<0.91 && abs(x-carX)<29) { scene="crash"; }
+        else if (!ob.passed && ob.z>0.79 && abs(x-carX)<43) { ob.passed=true; passes=passes+1; distance=distance+0.025; }
+        if (ob.z<1.04) { remaining.push(ob); }
+    }
+    traffic=remaining;
+};
+
+var drawRace = function() {
+    drawRoad();
+    for (var i=0;i<traffic.length;i++) {
+        var ob=traffic[i], z=ob.z, y=121+z*z*279, x=roadCenter(z)+ob.lane*roadHalf(z)*0.57;
+        drawCar(x,y,13+z*23,22+z*39,ob.car,true);
+    }
+    drawCar(carX,340,48,82,selectedCar,false);
+    noStroke(); fill(7,9,16); rect(8,8,95,36); rect(297,8,95,36);
+    fill(170,177,190); textAlign(LEFT,CENTER); textSize(7); text("DISTANCE",15,17);
+    fill(248,247,238); textSize(13); text(round(distance*100)/100+" KM",15,33);
+    fill(170,177,190); textAlign(RIGHT,CENTER); textSize(7); text("SPEED",385,17);
+    fill(83,240,221); textSize(13); text(round(speed)+" KM/H",385,33);
+    fill(7,9,16); rect(36,376,328,17);
+    fill(239,239,235); textAlign(CENTER,CENTER); textSize(7); text("← → STEER     ↑ GAS     ↓ BRAKE     P PAUSE",200,384);
+    fill(83,240,221); textAlign(LEFT,CENTER); textSize(7); text("PASSES "+passes,12,57);
+    if (scene==="paused" || scene==="crash") {
+        fill(0,0,0,190); rect(0,0,400,400);
+        fill(245,245,239); textAlign(CENTER,CENTER); textSize(22);
+        if (scene==="paused") { text("PAUSED",200,173); textSize(9); text("PRESS P TO RESUME",200,201); }
+        else { text("GAME OVER",200,166); textSize(10); text("DISTANCE "+(round(distance*100)/100)+" KM",200,189); text("ENTER: RETRY    CLICK: GARAGE",200,215); }
+    }
+};
+
+draw = function() {
+    if (scene==="garage") { drawGarage(); }
+    else {
+        if (scene==="race") { updateRace(); }
+        drawRace();
+    }
+};
+
+mouseClicked = function() {
+    if (scene==="garage") {
+        if (mouseY>=169 && mouseY<314 && mouseX>=8 && mouseX<396) {
+            var col=floor((mouseX-8)/97), row=floor((mouseY-169)/29), pick=row*4+col;
+            if (pick>=0 && pick<cars.length) { selectedCar=pick; }
+        } else if (mouseY>=321 && mouseY<=354) { newRace(); }
+    } else if (scene==="paused") { scene="race"; }
+    else if (scene==="crash") { scene="garage"; }
+    else if (mouseY<48 && mouseX>290) { scene="paused"; }
+};
+
+keyPressed = function() {
+    if (keyCode===37) { keys.left=true; }
+    if (keyCode===39) { keys.right=true; }
+    if (keyCode===38) { keys.gas=true; }
+    if (keyCode===40) { keys.brake=true; }
+    if (keyCode===13 && scene==="garage") { newRace(); }
+    else if (keyCode===13 && scene==="crash") { newRace(); }
+    else if ((keyCode===80 || keyCode===27 || key==="p" || key==="P") && scene==="race") { scene="paused"; }
+    else if ((keyCode===80 || keyCode===27 || key==="p" || key==="P") && scene==="paused") { scene="race"; }
+};
+keyReleased = function() {
+    if (keyCode===37) { keys.left=false; }
+    if (keyCode===39) { keys.right=false; }
+    if (keyCode===38) { keys.gas=false; }
+    if (keyCode===40) { keys.brake=false; }
+};
+
+  }
+};
+new Processing(document.getElementById('gameCanvas'), sketchProc);
+document.getElementById('gameCanvas').addEventListener('click', function(){this.focus();});
+</script></body></html>

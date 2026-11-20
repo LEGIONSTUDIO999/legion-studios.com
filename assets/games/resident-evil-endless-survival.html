@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RESIDENT EVIL: ENDLESS SURVIVAL | LEGION STUDIOS</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#030806;color:#9aff65;font-family:Arial,sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh}
+header{width:100%;padding:12px 18px;border-bottom:1px solid #24552c;background:#06110a}a{color:#9aff65}h1{font-size:16px;letter-spacing:2px;margin:0}
+main{width:min(96vw,680px);padding:14px}canvas{display:block;margin:auto;max-width:100%;height:auto;border:1px solid #377b38;box-shadow:0 0 24px #143d1d;background:#050908;touch-action:none}
+.note{color:#9bb99b;font-size:12px;text-align:center;line-height:1.5}
+</style></head><body><header><h1>RESIDENT EVIL: ENDLESS SURVIVAL</h1></header><main><canvas id="gameCanvas" width="400" height="400" tabindex="0"></canvas><p class="note">Click the game to focus it. Keyboard controls are shown in the game.</p></main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/processing.js/1.6.6/processing.min.js"></script>
+<script>
+var sketchProc = function(processing) {
+  with (processing) {
+    size(400, 400);
+    frameRate(60);
+var gameState = 0;
+var player;
+var zombies = [];
+var bullets = [];
+var supplies = [];
+var keys = {};
+var kills = 0;
+var spawnTimer = 0;
+var lastShot = -100;
+var lastHurt = -100;
+var weaponLevel = 0;
+var weaponChangedAt = -1000;
+
+var zombieFrameA = [
+    "....HHHH....",
+    "...HHHHHH...",
+    "..HHSSSSHH..",
+    "..HSSFFSSH..",
+    "..HSFEFSSH..",
+    "..HSSRRSSH..",
+    "...SSSSSS...",
+    ".WWCCCCWW...",
+    "SWCCCCCCWS..",
+    ".SCCCCCCS...",
+    "..CCCGGCC...",
+    "..CCCGCC....",
+    "..BB..BB....",
+    ".BBB..BBB...",
+    ".BB....BB...",
+    ".BB....BB..."
+];
+
+var zombieFrameB = zombieFrameA.slice(0);
+zombieFrameB[7] = ".WCCCCCCW...";
+zombieFrameB[12] = "...BB..BB...";
+zombieFrameB[13] = "..BBB..BBB..";
+zombieFrameB[14] = "...BB..BB...";
+zombieFrameB[15] = ".BB....BB...";
+
+var playerFrameA = [
+    "....HHHH....",
+    "...HHHHHH...",
+    "..HHUUUUHH..",
+    "..HUUUUUUH..",
+    "..HUUUEUUH..",
+    "...UUUUUU...",
+    "...GGG......",
+    "..JJJJJJ....",
+    ".JJLLLLJJ...",
+    "JJJJJJJJJJ..",
+    ".JJJJJJJJ...",
+    "..JJTTJJ....",
+    "...PP..PP...",
+    "..PPP..PPP..",
+    "..PP....PP..",
+    "..DD....DD.."
+];
+
+var playerFrameB = playerFrameA.slice(0);
+playerFrameB[12] = "....PPPP....";
+playerFrameB[13] = "...PPPPPP...";
+playerFrameB[14] = "...PP..PP...";
+
+function resetGame() {
+    player = {x: 200, y: 200, health: 100, ammo: 36, moving: false};
+    zombies = [];
+    bullets = [];
+    supplies = [];
+    kills = 0;
+    spawnTimer = 0;
+    lastShot = -100;
+    lastHurt = -100;
+    weaponLevel = 0;
+    weaponChangedAt = -1000;
+    gameState = 1;
+}
+
+keyPressed = function() {
+    keys[keyCode] = true;
+
+    if (gameState === 0) {
+        resetGame();
+    } else if (gameState === 2 && keyCode === 82) {
+        resetGame();
+    }
+};
+
+keyReleased = function() {
+    keys[keyCode] = false;
+};
+
+function spawnZombie() {
+    var edge = floor(random(4));
+    var x;
+    var y;
+
+    if (edge === 0) {
+        x = random(30, 370);
+        y = 30;
+    } else if (edge === 1) {
+        x = random(30, 370);
+        y = 370;
+    } else if (edge === 2) {
+        x = 30;
+        y = random(30, 370);
+    } else {
+        x = 370;
+        y = random(30, 370);
+    }
+
+    zombies.push({
+        x: x,
+        y: y,
+        health: 2,
+        speed: random(0.55, 1.05) + min(0.8, kills * 0.012)
+    });
+}
+
+function updateBullets() {
+    for (var i = bullets.length - 1; i >= 0; i--) {
+        var b = bullets[i];
+        b.x += b.vx;
+        b.y += b.vy;
+
+        var hit = false;
+
+        for (var j = zombies.length - 1; j >= 0; j--) {
+            var z = zombies[j];
+
+            if (dist(b.x, b.y, z.x, z.y) < 15) {
+                z.health -= b.damage;
+                bullets.splice(i, 1);
+                hit = true;
+
+                if (z.health <= 0) {
+                    kills++;
+                    zombies.splice(j, 1);
+
+                    var unlockedLevel = floor(kills / 10);
+                    if (unlockedLevel > weaponLevel) {
+                        weaponLevel = unlockedLevel;
+                        weaponChangedAt = frameCount;
+                        player.ammo += 24;
+                    }
+
+                    if (random(1) < 0.25) {
+                        supplies.push({x: z.x, y: z.y, type: "ammo"});
+                    }
+
+                    if (kills % 5 === 0) {
+                        var type = "ammo";
+                        if (kills % 10 === 0) {
+                            type = "med";
+                        }
+                        supplies.push({
+                            x: random(55, 345),
+                            y: random(55, 345),
+                            type: type
+                        });
+                    }
+                }
+                break;
+            }
+        }
+
+        if (!hit && (b.x < 20 || b.x > 380 || b.y < 20 || b.y > 380)) {
+            bullets.splice(i, 1);
+        }
+    }
+}
+
+function updateZombies() {
+    for (var i = zombies.length - 1; i >= 0; i--) {
+        var z = zombies[i];
+        var angle = atan2(player.y - z.y, player.x - z.x);
+
+        z.x += cos(angle) * z.speed;
+        z.y += sin(angle) * z.speed;
+
+        if (dist(player.x, player.y, z.x, z.y) < 23 &&
+            frameCount - lastHurt > 48) {
+            player.health -= 20;
+            lastHurt = frameCount;
+
+            if (player.health <= 0) {
+                player.health = 0;
+                gameState = 2;
+            }
+        }
+    }
+}
+
+function updateSupplies() {
+    for (var i = supplies.length - 1; i >= 0; i--) {
+        var item = supplies[i];
+
+        if (dist(player.x, player.y, item.x, item.y) < 22) {
+            if (item.type === "ammo") {
+                player.ammo += 18;
+            } else {
+                player.health = min(100, player.health + 30);
+            }
+            supplies.splice(i, 1);
+        }
+    }
+}
+
+function updateGame() {
+    var dx = 0;
+    var dy = 0;
+
+    if (keys[87] || keys[38]) { dy--; }
+    if (keys[83] || keys[40]) { dy++; }
+    if (keys[65] || keys[37]) { dx--; }
+    if (keys[68] || keys[39]) { dx++; }
+
+    player.moving = dx !== 0 || dy !== 0;
+
+    if (player.moving) {
+        var length = sqrt(dx * dx + dy * dy);
+        player.x += dx / length * 2.5;
+        player.y += dy / length * 2.5;
+    }
+
+    player.x = constrain(player.x, 30, 370);
+    player.y = constrain(player.y, 30, 370);
+
+    var weaponType = weaponLevel % 4;
+    var cooldown = 10;
+
+    if (weaponType === 1) {
+        cooldown = 22;
+    } else if (weaponType === 2) {
+        cooldown = 15;
+    } else if (weaponType === 3) {
+        cooldown = 4;
+    }
+
+    if (mouseIsPressed && player.ammo > 0 &&
+        frameCount - lastShot > cooldown) {
+        var aim = atan2(mouseY - player.y, mouseX - player.x);
+        var pellets = 1;
+        var spread = 0;
+        var speed = 7;
+        var damage = 1 + floor(weaponLevel / 4);
+
+        if (weaponType === 1) {
+            pellets = 5;
+            spread = 0.16;
+            speed = 6;
+        } else if (weaponType === 2) {
+            damage++;
+            speed = 9;
+        } else if (weaponType === 3) {
+            speed = 8;
+        }
+
+        for (var p = 0; p < pellets; p++) {
+            var shotAngle = aim + random(-spread, spread);
+            bullets.push({
+                x: player.x + cos(shotAngle) * 13,
+                y: player.y + sin(shotAngle) * 13,
+                vx: cos(shotAngle) * speed,
+                vy: sin(shotAngle) * speed,
+                damage: damage
+            });
+        }
+
+        player.ammo--;
+        lastShot = frameCount;
+    }
+
+    spawnTimer++;
+    var spawnEvery = max(30, 100 - kills);
+    var maxZombies = min(28, 5 + floor(kills / 2));
+
+    if (spawnTimer >= spawnEvery) {
+        spawnTimer = 0;
+        if (zombies.length < maxZombies) {
+            spawnZombie();
+        }
+    }
+
+    updateBullets();
+    updateZombies();
+    updateSupplies();
+}
+
+function drawPixelSprite(sprite) {
+    noStroke();
+
+    for (var row = 0; row < sprite.length; row++) {
+        for (var col = 0; col < sprite[row].length; col++) {
+            var pixel = sprite[row].charAt(col);
+
+            if (pixel === "H") {
+                fill(21, 21, 19);
+            } else if (pixel === "S") {
+                fill(75, 79, 67);
+            } else if (pixel === "F") {
+                fill(137, 132, 109);
+            } else if (pixel === "E") {
+                fill(18, 17, 16);
+            } else if (pixel === "R") {
+                fill(137, 48, 38);
+            } else if (pixel === "C") {
+                fill(35, 39, 36);
+            } else if (pixel === "G") {
+                fill(120, 120, 99);
+            } else if (pixel === "B") {
+                fill(28, 31, 29);
+            } else if (pixel === "W") {
+                fill(98, 99, 81);
+            } else if (pixel === "U") {
+                fill(190, 151, 112);
+            } else if (pixel === "J") {
+                fill(72, 91, 58);
+            } else if (pixel === "L") {
+                fill(111, 124, 73);
+            } else if (pixel === "T") {
+                fill(133, 111, 69);
+            } else if (pixel === "P") {
+                fill(49, 58, 54);
+            } else if (pixel === "D") {
+                fill(25, 28, 27);
+            }
+
+            if (pixel !== ".") {
+                rect(-12 + col * 2, -16 + row * 2, 2, 2);
+            }
+        }
+    }
+}
+
+function drawRoom() {
+    background(12, 19, 17);
+    noStroke();
+
+    for (var y = 18; y < 382; y += 24) {
+        for (var x = 18; x < 382; x += 24) {
+            if ((floor(x / 24) + floor(y / 24)) % 2 === 0) {
+                fill(31, 43, 35);
+            } else {
+                fill(27, 38, 32);
+            }
+            rect(x, y, 24, 24);
+        }
+    }
+
+    fill(65, 70, 55);
+    rect(0, 0, 400, 18);
+    rect(0, 382, 400, 18);
+    rect(0, 0, 18, 400);
+    rect(382, 0, 18, 400);
+
+    fill(91, 84, 61);
+    for (var bx = 10; bx < 390; bx += 36) {
+        rect(bx, 7, 18, 3);
+        rect(bx + 18, 12, 18, 3);
+        rect(bx, 388, 18, 3);
+        rect(bx + 18, 383, 18, 3);
+    }
+}
+
+function drawPlayer() {
+    var aim = atan2(mouseY - player.y, mouseX - player.x);
+    var direction = round(aim / 1.5708);
+    var sprite = playerFrameA;
+
+    if (player.moving && floor(frameCount / 8) % 2 === 1) {
+        sprite = playerFrameB;
+    }
+
+    pushMatrix();
+    translate(round(player.x), round(player.y));
+    rotate(direction * 1.5708 + 1.5708);
+    drawPixelSprite(sprite);
+    popMatrix();
+
+    noStroke();
+    fill(230, 208, 144);
+    rect(mouseX - 1, mouseY - 5, 2, 2);
+    rect(mouseX - 1, mouseY + 3, 2, 2);
+    rect(mouseX - 5, mouseY - 1, 2, 2);
+    rect(mouseX + 3, mouseY - 1, 2, 2);
+}
+
+function drawZombies() {
+    for (var i = 0; i < zombies.length; i++) {
+        var z = zombies[i];
+        var angle = atan2(player.y - z.y, player.x - z.x);
+        var direction = round(angle / 1.5708);
+        var sprite = zombieFrameA;
+
+        if (floor(frameCount / 8 + i) % 2 === 1) {
+            sprite = zombieFrameB;
+        }
+
+        pushMatrix();
+        translate(round(z.x), round(z.y));
+        rotate(direction * 1.5708 + 1.5708);
+        drawPixelSprite(sprite);
+        popMatrix();
+    }
+}
+
+function drawBullets() {
+    noStroke();
+    fill(238, 211, 130);
+
+    for (var i = 0; i < bullets.length; i++) {
+        rect(round(bullets[i].x) - 2, round(bullets[i].y) - 2, 4, 4);
+    }
+}
+
+function drawSupplies() {
+    for (var i = 0; i < supplies.length; i++) {
+        var item = supplies[i];
+
+        if (item.type === "ammo") {
+            fill(208, 166, 72);
+        } else {
+            fill(147, 57, 46);
+        }
+
+        noStroke();
+        rect(round(item.x) - 6, round(item.y) - 6, 12, 12);
+        fill(231, 215, 160);
+
+        if (item.type === "ammo") {
+            rect(round(item.x) - 1, round(item.y) - 4, 2, 8);
+            rect(round(item.x) - 4, round(item.y) - 1, 8, 2);
+        } else {
+            rect(round(item.x) - 1, round(item.y) - 4, 2, 8);
+            rect(round(item.x) - 4, round(item.y) - 1, 8, 2);
+        }
+    }
+}
+
+function getWeaponName() {
+    var names = ["PISTOL", "SHOTGUN", "RIFLE", "SMG"];
+    return names[weaponLevel % 4] + " MK " +
+        (floor(weaponLevel / 4) + 1);
+}
+
+function drawHUD() {
+    noStroke();
+    fill(8, 13, 12);
+    rect(20, 20, 360, 58);
+    fill(113, 112, 79);
+    rect(20, 20, 360, 2);
+    rect(20, 76, 360, 2);
+
+    textAlign(LEFT, CENTER);
+    textSize(13);
+    fill(219, 209, 165);
+    text("HP", 30, 34);
+
+    fill(53, 49, 38);
+    rect(60, 28, 105, 12);
+
+    if (player.health > 30) {
+        fill(116, 151, 82);
+    } else {
+        fill(177, 58, 47);
+    }
+
+    rect(62, 30, player.health, 8);
+
+    fill(219, 209, 165);
+    text("AMMO " + player.ammo, 180, 34);
+    text("KILLS " + kills, 290, 34);
+    textSize(10);
+    text("WEAPON " + getWeaponName(), 30, 51);
+    text("WASD / ARROWS: MOVE    MOUSE: AIM + FIRE", 30, 68);
+}
+
+function drawTitle() {
+    noStroke();
+    fill(0, 0, 0, 220);
+    rect(0, 0, 400, 400);
+
+    textAlign(CENTER, CENTER);
+    fill(178, 55, 42);
+    textSize(28);
+    text("resident evil", 200, 140);
+
+    fill(219, 209, 165);
+    textSize(13);
+    text("ENDLESS SURVIVAL", 200, 174);
+    text("PRESS ANY KEY TO START", 200, 255);
+
+    textSize(11);
+    fill(174, 177, 143);
+    text("MOVE: WASD OR ARROWS", 200, 300);
+    text("AIM AND FIRE: HOLD MOUSE", 200, 322);
+}
+
+function drawGameOver() {
+    noStroke();
+    fill(0, 0, 0, 220);
+    rect(0, 0, 400, 400);
+
+    textAlign(CENTER, CENTER);
+    fill(181, 53, 42);
+    textSize(24);
+    text("YOU WERE OVERRUN", 200, 160);
+
+    fill(219, 209, 165);
+    textSize(14);
+    text("ZOMBIES DEFEATED: " + kills, 200, 205);
+    text("PRESS R TO TRY AGAIN", 200, 255);
+}
+
+draw = function() {
+    drawRoom();
+
+    if (gameState === 1) {
+        updateGame();
+    }
+
+    drawSupplies();
+    drawZombies();
+    drawBullets();
+
+    if (player) {
+        drawPlayer();
+        drawHUD();
+
+        if (gameState === 1 && frameCount - weaponChangedAt < 150) {
+            textAlign(CENTER, CENTER);
+            fill(238, 211, 135);
+            textSize(14);
+            text("NEW WEAPON: " + getWeaponName(), 200, 96);
+        }
+    }
+
+    if (gameState === 0) {
+        drawTitle();
+    } else if (gameState === 2) {
+        drawGameOver();
+    }
+};
+  }
+};
+new Processing(document.getElementById('gameCanvas'), sketchProc);
+document.getElementById('gameCanvas').addEventListener('click', function(){this.focus();});
+</script></body></html>

@@ -1,0 +1,1358 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>INFINITE PLATFORM DASH | LEGION STUDIOS</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#030806;color:#9aff65;font-family:Arial,sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh}
+header{width:100%;padding:12px 18px;border-bottom:1px solid #24552c;background:#06110a}a{color:#9aff65}h1{font-size:16px;letter-spacing:2px;margin:0}
+main{width:min(96vw,680px);padding:14px}canvas{display:block;margin:auto;max-width:100%;height:auto;border:1px solid #377b38;box-shadow:0 0 24px #143d1d;background:#050908;touch-action:none}
+.note{color:#9bb99b;font-size:12px;text-align:center;line-height:1.5}
+</style></head><body><header><h1>INFINITE PLATFORM DASH</h1></header><main><canvas id="gameCanvas" width="400" height="400" tabindex="0"></canvas><p class="note">Click the game to focus it. Keyboard controls are shown in the game.</p></main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/processing.js/1.6.6/processing.min.js"></script>
+<script>
+var sketchProc = function(processing) {
+  with (processing) {
+    size(400, 400);
+    frameRate(60);
+var chunkWidth = 400;
+var generatedTo = 0;
+var mapSeed = 1;
+var cameraX = 0;
+var keys = {};
+var jumpQueued = false;
+var score = 0;
+var coinsCollected = 0;
+var lives = 5;
+var gameOver = false;
+var checkpointX = 0;
+var invulnerable = 0;
+var currentThemeIndex = 0;
+var mapNumber = 1;
+var choicePending = false;
+var paused = false;
+var showLeaderboard = false;
+var leaderboardScores = [];
+var runNumber = 1;
+var scoreRecorded = false;
+var playerName = "";
+var nameEntry = true;
+var studioIntro = true;
+var introStartFrame = 0;
+var activeEffects = [];
+var offeredPowers = [];
+var activePowerLabel = "";
+var powerFrames = 0;
+var godModeFrames = 0;
+var zapCooldown = 0;
+var rockets = [];
+var rocketCharge = 0;
+var bossActive = false;
+var boss = null;
+var bossArenaStart = 0;
+var nextBossAtMap = 5;
+
+var themes = [
+    {name: "GREEN HILLS", sky: [112, 203, 249], land: [76, 183, 78], dirt: [125, 76, 46], top: [172, 225, 111], cloud: [255, 255, 255]},
+    {name: "SAND DUNES", sky: [248, 190, 108], land: [218, 158, 77], dirt: [142, 91, 48], top: [250, 207, 105], cloud: [255, 238, 200]},
+    {name: "MOONLAND", sky: [43, 65, 122], land: [74, 104, 164], dirt: [62, 57, 98], top: [133, 166, 229], cloud: [205, 219, 255]},
+    {name: "CANDY CLOUDS", sky: [245, 149, 196], land: [165, 118, 211], dirt: [119, 70, 154], top: [238, 180, 235], cloud: [255, 239, 252]}
+];
+
+var powerTypes = [
+    {id: "SPEED", label: "NEON SPEED"},
+    {id: "JUMP", label: "HYPER JUMP"},
+    {id: "SHIELD", label: "SHIELD"},
+    {id: "MAGNET", label: "COIN MAGNET"},
+    {id: "ZAP", label: "ROBOT ZAP"},
+    {id: "COIN", label: "COIN BOOST"},
+    {id: "HEART", label: "EXTRA HEART"},
+    {id: "GRAVITY", label: "LOW GRAVITY"}
+];
+
+var player = {x: 40, y: 314, w: 26, h: 36, vx: 0, vy: 0, onGround: true, jumpsUsed: 0, facing: 1, shootCooldown: 0};
+var platforms = [];
+var coins = [];
+var enemies = [];
+var lasers = [];
+var playerLasers = [];
+
+function nextMapRandom() {
+    mapSeed = (mapSeed * 9301 + 49297) % 233280;
+    return mapSeed / 233280;
+}
+
+function generateChunk() {
+    var chunkIndex = Math.floor(generatedTo / chunkWidth);
+    var start = generatedTo;
+    var themeIndex = Math.floor(chunkIndex / 4) % themes.length;
+    mapSeed = (chunkIndex * 104729 + 9983) % 233280;
+    if (mapSeed < 1) { mapSeed = 1; }
+
+    platforms.push({x: start, y: 350, w: chunkWidth, h: 80, theme: themeIndex, ground: true});
+
+    var firstX = start + 65;
+    var firstY = 270 + Math.floor(nextMapRandom() * 31);
+    var firstW = 85 + Math.floor(nextMapRandom() * 31);
+    platforms.push({x: firstX, y: firstY, w: firstW, h: 16, theme: themeIndex, ground: false});
+
+    var secondX = start + 230;
+    var secondY = 250 + Math.floor(nextMapRandom() * 39);
+    var secondW = 85 + Math.floor(nextMapRandom() * 31);
+    platforms.push({x: secondX, y: secondY, w: secondW, h: 16, theme: themeIndex, ground: false});
+
+    coins.push({x: start + 135, y: 319, taken: false});
+    coins.push({x: firstX + firstW / 2, y: firstY - 22, taken: false});
+    coins.push({x: secondX + secondW / 2, y: secondY - 22, taken: false});
+    coins.push({x: start + 355, y: 319, taken: false});
+
+    if (chunkIndex > 0) {
+        enemies.push({x: start + 190, y: 350 - 36, w: 30, h: 36, left: start + 155, right: start + 235, speed: 1.05 + nextMapRandom() * 0.75, shootTimer: 70 + Math.floor(nextMapRandom() * 75), alive: true});
+    }
+
+    generatedTo += chunkWidth;
+}
+
+function ensureWorld() {
+    while (generatedTo < player.x + 1000) {
+        generateChunk();
+    }
+}
+
+function removeOldWorld() {
+    var cutoff = cameraX - 500;
+    var i;
+    for (i = platforms.length - 1; i >= 0; i--) {
+        if (platforms[i].x + platforms[i].w < cutoff) { platforms.splice(i, 1); }
+    }
+    for (i = coins.length - 1; i >= 0; i--) {
+        if (coins[i].x + 12 < cutoff) { coins.splice(i, 1); }
+    }
+    for (i = enemies.length - 1; i >= 0; i--) {
+        if (enemies[i].x + enemies[i].w < cutoff) { enemies.splice(i, 1); }
+    }
+    for (i = lasers.length - 1; i >= 0; i--) {
+        if (lasers[i].x < cutoff) { lasers.splice(i, 1); }
+    }
+    for (i = playerLasers.length - 1; i >= 0; i--) {
+        if (playerLasers[i].x < cutoff) { playerLasers.splice(i, 1); }
+    }
+    for (i = rockets.length - 1; i >= 0; i--) {
+        if (rockets[i].x + rockets[i].w < cutoff) { rockets.splice(i, 1); }
+    }
+}
+
+function resetGame() {
+    player.x = 40;
+    player.y = 350 - player.h;
+    player.vx = 0;
+    player.vy = 0;
+    player.onGround = true;
+    player.jumpsUsed = 0;
+    player.facing = 1;
+    player.shootCooldown = 0;
+    platforms = [];
+    coins = [];
+    enemies = [];
+    lasers = [];
+    playerLasers = [];
+    rockets = [];
+    rocketCharge = 0;
+    bossActive = false;
+    boss = null;
+    bossArenaStart = 0;
+    nextBossAtMap = 5;
+    generatedTo = 0;
+    cameraX = 0;
+    score = 0;
+    coinsCollected = 0;
+    lives = 5;
+    gameOver = false;
+    checkpointX = 0;
+    invulnerable = 0;
+    currentThemeIndex = 0;
+    mapNumber = 1;
+    choicePending = false;
+    paused = false;
+    showLeaderboard = false;
+    scoreRecorded = false;
+    activeEffects = [];
+    offeredPowers = [];
+    activePowerLabel = "";
+    powerFrames = 0;
+    godModeFrames = 0;
+    zapCooldown = 0;
+    jumpQueued = false;
+    keys = {};
+    ensureWorld();
+}
+
+function describePower(power) {
+    var parts = [];
+    for (var i = 0; i < power.effects.length; i++) {
+        var effect = power.effects[i];
+        var label = "";
+        for (var j = 0; j < powerTypes.length; j++) {
+            if (powerTypes[j].id === effect.type) { label = powerTypes[j].label; }
+        }
+        parts.push(effect.type === "HEART" ? label : label + " Lv." + effect.level);
+    }
+    return parts.join(" + ");
+}
+
+function generatePowerChoice() {
+    var available = [];
+    for (var i = 0; i < powerTypes.length; i++) { available.push(powerTypes[i].id); }
+    var effectCount = 1 + Math.floor(nextMapRandom() * 2);
+    var power = {effects: []};
+    var tier = Math.floor(coinsCollected / 10) + 1;
+    for (var j = 0; j < effectCount; j++) {
+        var pick = Math.floor(nextMapRandom() * available.length);
+        var type = available.splice(pick, 1)[0];
+        power.effects.push({type: type, level: tier + Math.floor(nextMapRandom() * 3)});
+    }
+    power.label = describePower(power);
+    return power;
+}
+
+function offerPowerChoices() {
+    offeredPowers = [];
+    mapSeed = (mapSeed + coinsCollected * 347 + frameCount * 7) % 233280;
+    for (var i = 0; i < 3; i++) {
+        var option = generatePowerChoice();
+        var tries = 0;
+        var duplicate = false;
+        for (var j = 0; j < offeredPowers.length; j++) {
+            if (option.label === offeredPowers[j].label) { duplicate = true; }
+        }
+        while (tries < 10 && duplicate) {
+            option = generatePowerChoice();
+            tries++;
+            duplicate = false;
+            for (var k = 0; k < offeredPowers.length; k++) {
+                if (option.label === offeredPowers[k].label) { duplicate = true; }
+            }
+        }
+        offeredPowers.push(option);
+    }
+    if (coinsCollected % 100 === 0) {
+        offeredPowers.push({effects: [], label: "GOD MODE (60s)", godMode: true});
+    }
+    choicePending = true;
+}
+
+function getPowerLevel(type) {
+    if (godModeFrames > 0 && type !== "HEART") { return 999; }
+    var level = 0;
+    for (var i = 0; i < activeEffects.length; i++) {
+        if (activeEffects[i].type === type) { level += activeEffects[i].level; }
+    }
+    return level;
+}
+
+function hasPower(type) {
+    return getPowerLevel(type) > 0;
+}
+
+function selectPower(index) {
+    if (index < 0 || index >= offeredPowers.length) { return; }
+    if (offeredPowers[index].godMode) {
+        godModeFrames = 3600;
+        lives++;
+    } else {
+        var selectedEffects = offeredPowers[index].effects;
+        var lastingEffects = [];
+        var gainedHeart = false;
+        for (var i = 0; i < selectedEffects.length; i++) {
+            if (selectedEffects[i].type === "HEART") {
+                lives++;
+                gainedHeart = true;
+            } else {
+                lastingEffects.push(selectedEffects[i]);
+            }
+        }
+        if (lastingEffects.length > 0) {
+            activeEffects = lastingEffects;
+            activePowerLabel = offeredPowers[index].label;
+            powerFrames = 1800;
+        } else if (!gainedHeart) {
+            activeEffects = selectedEffects;
+            activePowerLabel = offeredPowers[index].label;
+            powerFrames = 1800;
+        }
+    }
+    choicePending = false;
+    jumpQueued = false;
+    keys = {};
+    zapCooldown = 0;
+}
+
+function fireRocket() {
+    var charge = rocketCharge;
+    var rocketWidth = 22;
+    if (charge <= 0) { return; }
+    rockets.push({
+        x: player.facing > 0 ? player.x + player.w : player.x - rocketWidth,
+        y: player.y + player.h / 2 - 5,
+        w: rocketWidth,
+        h: 10,
+        vx: player.facing * 8.5,
+        life: 120,
+        damage: 3 + Math.floor(charge / 10)
+    });
+    rocketCharge = 0;
+}
+
+function startGame() {
+    if (playerName.length === 0) { playerName = "PLAYER"; }
+    nameEntry = false;
+    paused = false;
+    showLeaderboard = false;
+}
+
+keyPressed = function() {
+    if (studioIntro) {
+        if (introStartFrame === 0) { introStartFrame = frameCount; }
+        if (keyCode === 32 || keyCode === 13 || keyCode === 10) {
+            studioIntro = false;
+        }
+        return;
+    }
+    if (nameEntry) {
+        if (keyCode === 13 || keyCode === 10) {
+            startGame();
+        } else if (keyCode === 8 || keyCode === 46) {
+            playerName = playerName.substring(0, max(0, playerName.length - 1));
+        } else if ((keyCode >= 65 && keyCode <= 90) || (keyCode >= 48 && keyCode <= 57)) {
+            if (playerName.length < 12) { playerName += String.fromCharCode(keyCode); }
+        } else if (key && key.length === 1 && playerName.length < 12) {
+            var typedNameChar = key.toUpperCase();
+            if ((typedNameChar >= "A" && typedNameChar <= "Z") || (typedNameChar >= "0" && typedNameChar <= "9")) {
+                playerName += typedNameChar;
+            }
+        }
+        return;
+    }
+
+    if (choicePending) {
+        if (keyCode === 49 || key === "1") { selectPower(0); }
+        else if (keyCode === 50 || key === "2") { selectPower(1); }
+        else if (keyCode === 51 || key === "3") { selectPower(2); }
+        else if (keyCode === 52 || key === "4") { selectPower(3); }
+        return;
+    }
+
+    keys[keyCode] = true;
+    if (keyCode === 65 || key === "a" || key === "A") { keys[65] = true; }
+    if (keyCode === 68 || key === "d" || key === "D") { keys[68] = true; }
+    if (keyCode === 87 || key === "w" || key === "W") { keys[87] = true; }
+    if (keyCode === 90 || key === "z" || key === "Z") { keys[90] = true; }
+    if (keyCode === 80 || key === "p" || key === "P") {
+        if (!gameOver) { paused = !paused; showLeaderboard = false; }
+        return;
+    }
+    if (keyCode === 76 || key === "l" || key === "L") {
+        showLeaderboard = !showLeaderboard;
+        paused = showLeaderboard;
+        return;
+    }
+    if (keyCode === 32 || keyCode === 38 || keyCode === 87 || key === "w" || key === "W") {
+        jumpQueued = true;
+    }
+    if (gameOver && (keyCode === 82 || key === "r" || key === "R")) {
+        runNumber++;
+        resetGame();
+    } else if (gameOver && (keyCode === 78 || key === "n" || key === "N")) {
+        runNumber++;
+        resetGame();
+        playerName = "";
+        nameEntry = true;
+    }
+};
+
+keyReleased = function() {
+    keys[keyCode] = false;
+    if (keyCode === 65 || key === "a" || key === "A") { keys[65] = false; }
+    if (keyCode === 68 || key === "d" || key === "D") { keys[68] = false; }
+    if (keyCode === 87 || key === "w" || key === "W") { keys[87] = false; }
+    if (keyCode === 90 || key === "z" || key === "Z") {
+        keys[90] = false;
+        if (rocketCharge > 0 && !nameEntry && !gameOver && !choicePending && !paused && !showLeaderboard) {
+            fireRocket();
+        } else {
+            rocketCharge = 0;
+        }
+    }
+};
+
+mousePressed = function() {
+    if (studioIntro) {
+        studioIntro = false;
+        return;
+    }
+    if (nameEntry) {
+        if (mouseY >= 265 && mouseY <= 310 && mouseX >= 130 && mouseX <= 270) { startGame(); }
+        return;
+    }
+    if (mouseY >= 31 && mouseY <= 51 && mouseX >= 238 && mouseX <= 306) {
+        if (showLeaderboard) {
+            showLeaderboard = false;
+            paused = false;
+        } else if (!gameOver) {
+            paused = !paused;
+        }
+        return;
+    }
+    if (mouseY >= 31 && mouseY <= 51 && mouseX >= 309 && mouseX <= 390) {
+        showLeaderboard = !showLeaderboard;
+        paused = showLeaderboard;
+    }
+};
+
+function overlaps(ax, ay, aw, ah, bx, by, bw, bh) {
+    return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+}
+
+function recordScore() {
+    if (scoreRecorded) { return; }
+    scoreRecorded = true;
+    leaderboardScores.push({name: playerName, run: runNumber, score: score, distance: Math.floor(player.x / 10)});
+    leaderboardScores.sort(function(a, b) { return b.score - a.score; });
+    if (leaderboardScores.length > 5) { leaderboardScores.splice(5, leaderboardScores.length - 5); }
+}
+
+function takeHit() {
+    if (hasPower("SHIELD") || godModeFrames > 0 || invulnerable > 0) { return; }
+    lives--;
+    if (lives <= 0) {
+        gameOver = true;
+        recordScore();
+        return;
+    }
+    player.x = checkpointX + 20;
+    player.y = 350 - player.h;
+    player.vx = 0;
+    player.vy = 0;
+    player.jumpsUsed = 0;
+    invulnerable = 100;
+}
+
+function startBossBattle(triggerX) {
+    bossArenaStart = triggerX;
+    player.x = triggerX;
+    player.vx = 0;
+    bossActive = true;
+    boss = {
+        x: triggerX + 170,
+        y: 350 - player.h * 4,
+        w: player.w * 4,
+        h: player.h * 4,
+        health: 48,
+        maxHealth: 48,
+        shootTimer: 80,
+        chargeTimer: 0,
+        warningY: 0
+    };
+}
+
+function defeatBoss() {
+    if (!bossActive) { return; }
+    score += 1000;
+    bossActive = false;
+    boss = null;
+    nextBossAtMap += 5;
+    for (var i = lasers.length - 1; i >= 0; i--) {
+        if (lasers[i].boss) { lasers.splice(i, 1); }
+    }
+}
+
+function updateBossBattle() {
+    if (!bossActive || !boss) { return; }
+    if (boss.chargeTimer > 0) {
+        boss.chargeTimer--;
+        if (boss.chargeTimer === 0) {
+            var beamWidth = 72;
+            lasers.push({
+                x: boss.x - beamWidth,
+                y: boss.warningY,
+                w: beamWidth,
+                h: 18,
+                vx: -5.2,
+                life: 120,
+                boss: true
+            });
+            boss.shootTimer = 100 + Math.floor(nextMapRandom() * 45);
+        }
+    } else {
+        boss.shootTimer--;
+        if (boss.shootTimer <= 0) {
+            boss.warningY = constrain(player.y + player.h / 2 - 9, 70, 330);
+            boss.chargeTimer = 28;
+        }
+    }
+}
+
+function updateGame() {
+    if (nameEntry || gameOver || choicePending || paused || showLeaderboard) { return; }
+
+    var direction = 0;
+    if (keys[37] || keys[65]) { direction--; }
+    if (keys[39] || keys[68]) { direction++; }
+    if (direction < 0) { player.facing = -1; }
+    if (direction > 0) { player.facing = 1; }
+    var runSpeed = 3.1 + min(6, getPowerLevel("SPEED") * 0.24);
+    player.vx = direction * runSpeed;
+
+    if (player.shootCooldown > 0) { player.shootCooldown--; }
+    if (keys[90] && player.shootCooldown <= 0) {
+        playerLasers.push({x: player.facing > 0 ? player.x + player.w : player.x - 14, y: player.y + 22, w: 14, h: 4, vx: player.facing * 8, life: 90});
+        player.shootCooldown = 12;
+    }
+    if (keys[90]) { rocketCharge = min(90, rocketCharge + 1); }
+
+    if (jumpQueued) {
+        if (player.jumpsUsed < 2) {
+            player.vy = -10.5 - min(6, getPowerLevel("JUMP") * 0.2);
+            player.onGround = false;
+            player.jumpsUsed++;
+        }
+        jumpQueued = false;
+    }
+
+    player.x += player.vx;
+    for (var i = 0; i < platforms.length; i++) {
+        var p = platforms[i];
+        if (overlaps(player.x, player.y + 2, player.w, player.h - 4, p.x, p.y, p.w, p.h)) {
+            if (player.vx > 0) { player.x = p.x - player.w; }
+            else if (player.vx < 0) { player.x = p.x + p.w; }
+        }
+    }
+
+    var bossTriggerX = nextBossAtMap * chunkWidth * 4;
+    if (!bossActive && player.x >= bossTriggerX) { startBossBattle(bossTriggerX); }
+    if (bossActive) {
+        var bossPlayerMaxX = boss.x - player.w - 92;
+        if (player.x < bossArenaStart) { player.x = bossArenaStart; }
+        if (player.x > bossPlayerMaxX) {
+            player.x = bossPlayerMaxX;
+            if (player.vx > 0) { player.vx = 0; }
+        }
+    }
+
+    var oldY = player.y;
+    var gravity = max(0.2, 0.52 / (1 + getPowerLevel("GRAVITY") * 0.08));
+    player.vy = min(player.vy + gravity, 10.5);
+    player.y += player.vy;
+    player.onGround = false;
+
+    for (var j = 0; j < platforms.length; j++) {
+        var platform = platforms[j];
+        var horizontalHit = player.x + player.w > platform.x && player.x < platform.x + platform.w;
+        if (horizontalHit && player.vy >= 0 && oldY + player.h <= platform.y && player.y + player.h >= platform.y) {
+            player.y = platform.y - player.h;
+            player.vy = 0;
+            player.onGround = true;
+            player.jumpsUsed = 0;
+        } else if (horizontalHit && player.vy < 0 && oldY >= platform.y + platform.h && player.y <= platform.y + platform.h) {
+            player.y = platform.y + platform.h;
+            player.vy = 0;
+        }
+    }
+
+    if (player.x < 0) { player.x = 0; }
+
+    for (var c = 0; c < coins.length; c++) {
+        var coin = coins[c];
+        var coinHit = overlaps(player.x, player.y, player.w, player.h, coin.x - 9, coin.y - 10, 18, 20);
+        var magnetRange = min(300, 70 + getPowerLevel("MAGNET") * 15);
+        if (magnetRange > 70) {
+            coinHit = coinHit || overlaps(player.x - magnetRange, player.y - magnetRange, player.w + magnetRange * 2, player.h + magnetRange * 2, coin.x - 9, coin.y - 10, 18, 20);
+        }
+        if (!coin.taken && coinHit) {
+            coin.taken = true;
+            score += 10 + min(100, getPowerLevel("COIN") * 2);
+            coinsCollected++;
+            if (coinsCollected % 10 === 0) {
+                offerPowerChoices();
+                break;
+            }
+        }
+    }
+
+    cameraX = max(0, player.x - 135);
+    if (choicePending) { return; }
+
+    var zapLevel = getPowerLevel("ZAP");
+    if (zapLevel > 0) {
+        zapCooldown--;
+        if (zapCooldown <= 0) {
+            var zapRange = min(450, 130 + zapLevel * 15);
+            var zapTarget = null;
+            var nearestDistance = zapRange;
+            for (var z = 0; z < enemies.length; z++) {
+                var targetDistance = abs(enemies[z].x - player.x);
+                if (enemies[z].alive && targetDistance < nearestDistance) {
+                    zapTarget = enemies[z];
+                    nearestDistance = targetDistance;
+                }
+            }
+            if (zapTarget !== null) {
+                zapTarget.alive = false;
+                score += 20;
+                zapCooldown = max(18, 90 - zapLevel * 3);
+            } else {
+                zapCooldown = 12;
+            }
+        }
+    } else {
+        zapCooldown = 0;
+    }
+
+    for (var e = 0; e < enemies.length; e++) {
+        var enemy = enemies[e];
+        if (!enemy.alive) { continue; }
+        enemy.x += enemy.speed;
+        if (enemy.x < enemy.left || enemy.x > enemy.right) { enemy.speed *= -1; }
+
+        enemy.shootTimer--;
+        if (enemy.shootTimer <= 0) {
+            enemy.shootTimer = 110 + Math.floor(nextMapRandom() * 80);
+            if (abs(enemy.x - player.x) < 500) {
+                lasers.push({x: enemy.x + enemy.w / 2, y: enemy.y + 18, w: 15, h: 5, vx: player.x < enemy.x ? -5.2 : 5.2, life: 120});
+            }
+        }
+
+        if (overlaps(player.x, player.y, player.w, player.h, enemy.x, enemy.y, enemy.w, enemy.h)) {
+            if (godModeFrames > 0 || (player.vy > 0 && oldY + player.h <= enemy.y + 9)) {
+                enemy.alive = false;
+                player.y = enemy.y - player.h;
+                player.vy = -8.2;
+                player.jumpsUsed = 0;
+                score += 20;
+            } else if (hasPower("SHIELD")) {
+                enemy.alive = false;
+                score += 10;
+            } else if (invulnerable <= 0) {
+                takeHit();
+            }
+        }
+    }
+
+    updateBossBattle();
+
+    for (var s = playerLasers.length - 1; s >= 0; s--) {
+        var shot = playerLasers[s];
+        shot.x += shot.vx;
+        shot.life--;
+        var hitRobot = false;
+        if (bossActive && overlaps(shot.x, shot.y, shot.w, shot.h, boss.x, boss.y, boss.w, boss.h)) {
+            boss.health--;
+            score += 10;
+            hitRobot = true;
+            if (boss.health <= 0) { defeatBoss(); }
+        }
+        for (var r = 0; !hitRobot && r < enemies.length; r++) {
+            if (enemies[r].alive && overlaps(shot.x, shot.y, shot.w, shot.h, enemies[r].x, enemies[r].y, enemies[r].w, enemies[r].h)) {
+                enemies[r].alive = false;
+                score += 20;
+                hitRobot = true;
+                break;
+            }
+        }
+        if (hitRobot || shot.life <= 0 || shot.x < cameraX - 100 || shot.x > cameraX + width + 600) {
+            playerLasers.splice(s, 1);
+        }
+    }
+
+    for (var q = rockets.length - 1; q >= 0; q--) {
+        var rocket = rockets[q];
+        rocket.x += rocket.vx;
+        rocket.life--;
+        var rocketHit = false;
+        if (bossActive && overlaps(rocket.x, rocket.y, rocket.w, rocket.h, boss.x, boss.y, boss.w, boss.h)) {
+            boss.health -= rocket.damage;
+            score += 25;
+            rocketHit = true;
+            if (boss.health <= 0) { defeatBoss(); }
+        }
+        for (var t = 0; !rocketHit && t < enemies.length; t++) {
+            if (enemies[t].alive && overlaps(rocket.x, rocket.y, rocket.w, rocket.h, enemies[t].x, enemies[t].y, enemies[t].w, enemies[t].h)) {
+                enemies[t].alive = false;
+                score += 30;
+                rocketHit = true;
+            }
+        }
+        if (rocketHit || rocket.life <= 0 || rocket.x < cameraX - 100 || rocket.x > cameraX + width + 600) {
+            rockets.splice(q, 1);
+        }
+    }
+
+    for (var l = lasers.length - 1; l >= 0; l--) {
+        var laser = lasers[l];
+        laser.x += laser.vx;
+        laser.life--;
+        var laserTop = laser.boss ? laser.y : laser.y - 2;
+        if (overlaps(player.x, player.y + 4, player.w, player.h - 8, laser.x, laserTop, laser.w, laser.h)) {
+            if (hasPower("SHIELD") || godModeFrames > 0) { score += 5; }
+            else { takeHit(); }
+            lasers.splice(l, 1);
+        } else if (laser.life <= 0 || laser.x < cameraX - 100 || laser.x > cameraX + width + 600) {
+            lasers.splice(l, 1);
+        }
+    }
+
+    if (invulnerable > 0) { invulnerable--; }
+    if (player.y > 430) {
+        if (godModeFrames > 0) {
+            player.x = checkpointX + 20;
+            player.y = 350 - player.h;
+            player.vx = 0;
+            player.vy = 0;
+            player.onGround = true;
+        } else { takeHit(); }
+    }
+    if (godModeFrames > 0) { godModeFrames--; }
+    if (powerFrames > 0) {
+        powerFrames--;
+        if (powerFrames <= 0) {
+            activeEffects = [];
+            activePowerLabel = "";
+            zapCooldown = 0;
+        }
+    }
+
+    var newCheckpoint = Math.floor(player.x / chunkWidth) * chunkWidth;
+    if (newCheckpoint > checkpointX) { checkpointX = newCheckpoint; }
+    currentThemeIndex = Math.floor(Math.floor(player.x / chunkWidth) / 4) % themes.length;
+    mapNumber = Math.floor(player.x / (chunkWidth * 4)) + 1;
+
+    cameraX = max(0, player.x - 135);
+    ensureWorld();
+    removeOldWorld();
+}
+
+function drawCloud(x, y, scale, cloudColor) {
+    noStroke();
+    fill(cloudColor[0], cloudColor[1], cloudColor[2], 220);
+    ellipse(x, y, 48 * scale, 25 * scale);
+    ellipse(x - 18 * scale, y + 4 * scale, 28 * scale, 19 * scale);
+    ellipse(x + 18 * scale, y + 5 * scale, 31 * scale, 18 * scale);
+}
+
+function drawBackground() {
+    var theme = themes[currentThemeIndex];
+    background(theme.sky[0], theme.sky[1], theme.sky[2]);
+    noStroke();
+    if (currentThemeIndex === 2) { fill(255, 244, 174); }
+    else { fill(255, 232, 130); }
+    ellipse(342, 70, 48, 48);
+
+    var drift = (cameraX * 0.22) % 450;
+    drawCloud(60 - drift, 84, 0.9, theme.cloud);
+    drawCloud(245 - drift, 130, 0.75, theme.cloud);
+    drawCloud(430 - drift, 76, 1, theme.cloud);
+    drawCloud(615 - drift, 112, 0.85, theme.cloud);
+
+    fill(theme.land[0], theme.land[1], theme.land[2]);
+    ellipse(80, 355, 310, 150);
+    ellipse(350, 360, 390, 170);
+    ellipse(680, 360, 370, 160);
+}
+
+function drawPlatforms() {
+    noStroke();
+    for (var i = 0; i < platforms.length; i++) {
+        var p = platforms[i];
+        var theme = themes[p.theme];
+        if (p.ground) {
+            fill(theme.dirt[0], theme.dirt[1], theme.dirt[2]);
+            rect(p.x, p.y, p.w, p.h);
+            fill(theme.land[0], theme.land[1], theme.land[2]);
+            rect(p.x, p.y, p.w, 10);
+            fill(theme.top[0], theme.top[1], theme.top[2]);
+            for (var g = p.x; g < p.x + p.w; g += 42) { rect(g, p.y + 10, 23, 5); }
+        } else {
+            fill(theme.dirt[0], theme.dirt[1], theme.dirt[2]);
+            rect(p.x, p.y + 5, p.w, p.h - 5, 4);
+            fill(theme.land[0], theme.land[1], theme.land[2]);
+            rect(p.x, p.y, p.w, 8, 4);
+            fill(theme.top[0], theme.top[1], theme.top[2]);
+            rect(p.x + 8, p.y + 9, p.w - 16, 3);
+        }
+    }
+}
+
+function drawCoin(coin) {
+    if (coin.taken) { return; }
+    var squash = abs(sin(frameCount * 5 + coin.x)) * 0.55 + 0.45;
+    noStroke();
+    fill(255, 193, 42);
+    ellipse(coin.x, coin.y, 17 * squash, 21);
+    fill(255, 231, 107);
+    ellipse(coin.x - 2, coin.y - 2, 5 * squash, 13);
+}
+
+function drawRobot(enemy) {
+    if (!enemy.alive) { return; }
+    noStroke();
+    fill(71, 82, 97);
+    rect(enemy.x + 6, enemy.y + 12, 18, 14, 2);
+    fill(155, 169, 181);
+    rect(enemy.x + 8, enemy.y + 1, 14, 11, 2);
+    fill(37, 46, 58);
+    rect(enemy.x + 10, enemy.y + 4, 10, 5, 1);
+    fill(255, 55, 48);
+    rect(enemy.x + 11, enemy.y + 5, 3, 2);
+    rect(enemy.x + 16, enemy.y + 5, 3, 2);
+    fill(194, 205, 211);
+    rect(enemy.x + 12, enemy.y + 10, 6, 3, 1);
+    rect(enemy.x + 2, enemy.y + 13, 5, 7, 1);
+    rect(enemy.x + 23, enemy.y + 13, 5, 7, 1);
+    fill(86, 98, 110);
+    rect(enemy.x + 3, enemy.y + 19, 4, 9, 1);
+    rect(enemy.x + 23, enemy.y + 19, 4, 9, 1);
+    fill(194, 205, 211);
+    rect(enemy.x + 2, enemy.y + 27, 6, 4, 1);
+    rect(enemy.x + 22, enemy.y + 27, 6, 4, 1);
+    fill(71, 82, 97);
+    rect(enemy.x + 8, enemy.y + 25, 6, 5, 1);
+    rect(enemy.x + 16, enemy.y + 25, 6, 5, 1);
+    fill(155, 169, 181);
+    rect(enemy.x + 8, enemy.y + 29, 5, 5, 1);
+    rect(enemy.x + 17, enemy.y + 29, 5, 5, 1);
+    fill(71, 82, 97);
+    rect(enemy.x + 5, enemy.y + 33, 9, 3, 1);
+    rect(enemy.x + 16, enemy.y + 33, 9, 3, 1);
+    fill(255, 67, 57);
+    rect(enemy.x + 25, enemy.y + 23, 5, 3, 1);
+}
+
+function drawBoss() {
+    if (!bossActive || !boss) { return; }
+    var x = boss.x;
+    var y = boss.y;
+    noStroke();
+    fill(38, 44, 54);
+    rect(x + 18, y + 124, 29, 20, 4);
+    rect(x + 58, y + 124, 29, 20, 4);
+    fill(130, 145, 158);
+    rect(x + 27, y + 96, 22, 37, 3);
+    rect(x + 57, y + 96, 22, 37, 3);
+    fill(71, 82, 97);
+    rect(x + 17, y + 40, 70, 62, 7);
+    fill(37, 46, 58);
+    rect(x + 31, y + 52, 42, 34, 4);
+    fill(255, 55, 48);
+    ellipse(x + 52, y + 69, 18, 18);
+    fill(255, 210, 190);
+    ellipse(x + 52, y + 69, 7, 7);
+    fill(86, 98, 110);
+    rect(x, y + 45, 24, 59, 4);
+    rect(x + 80, y + 45, 24, 59, 4);
+    fill(155, 169, 181);
+    rect(x + 4, y + 53, 16, 43, 3);
+    rect(x + 84, y + 53, 16, 43, 3);
+    fill(255, 55, 48);
+    rect(x + 1, y + 86, 23, 12, 3);
+    fill(71, 82, 97);
+    rect(x + 25, y + 4, 54, 39, 7);
+    fill(155, 169, 181);
+    rect(x + 31, y + 8, 42, 28, 4);
+    fill(37, 46, 58);
+    rect(x + 35, y + 15, 34, 14, 3);
+    fill(255, 55, 48);
+    rect(x + 38, y + 19, 10, 5, 2);
+    rect(x + 56, y + 19, 10, 5, 2);
+    fill(255, 210, 190);
+    rect(x + 41, y + 20, 4, 2);
+    rect(x + 59, y + 20, 4, 2);
+    fill(255, 55, 48);
+    triangle(x + 20, y + 46, x + 28, y + 28, x + 34, y + 46);
+    triangle(x + 70, y + 46, x + 78, y + 28, x + 84, y + 46);
+    fill(24, 29, 38);
+    rect(x, y - 19, boss.w, 9, 2);
+    fill(255, 45, 35);
+    rect(x + 2, y - 17, (boss.w - 4) * max(0, boss.health) / boss.maxHealth, 5, 1);
+    textAlign(CENTER, CENTER);
+    fill(255, 255, 255);
+    textSize(11);
+    text("MEGA ROBOT", x + boss.w / 2, y - 27);
+    if (boss.chargeTimer > 0) {
+        stroke(255, 45, 35);
+        strokeWeight(3);
+        line(x - 72, boss.warningY + 9, x, boss.warningY + 9);
+        noStroke();
+        fill(255, 75, 60);
+        text("LASER CHARGING", x + boss.w / 2, y - 39);
+    }
+}
+
+function drawLaser(laser) {
+    if (laser.boss) {
+        noStroke();
+        fill(255, 35, 25, 110);
+        rect(laser.x, laser.y, laser.w, laser.h);
+        fill(255, 55, 40);
+        rect(laser.x, laser.y + 4, laser.w, laser.h - 8);
+        fill(255, 225, 205);
+        rect(laser.x, laser.y + 7, laser.w, 4);
+        return;
+    }
+    stroke(255, 48, 42);
+    strokeWeight(6);
+    line(laser.x, laser.y, laser.x + laser.vx * 2, laser.y);
+    stroke(255, 222, 190);
+    strokeWeight(2);
+    line(laser.x, laser.y, laser.x + laser.vx * 2, laser.y);
+    noStroke();
+}
+
+function drawPlayerLaser(laser) {
+    stroke(53, 255, 0);
+    strokeWeight(5);
+    line(laser.x, laser.y, laser.x + laser.vx * 2, laser.y);
+    stroke(220, 255, 190);
+    strokeWeight(2);
+    line(laser.x, laser.y, laser.x + laser.vx * 2, laser.y);
+    noStroke();
+}
+
+function drawRocket(rocket) {
+    noStroke();
+    if (rocket.vx > 0) {
+        fill(255, 110, 28);
+        triangle(rocket.x, rocket.y + 2, rocket.x - 7, rocket.y + rocket.h / 2, rocket.x, rocket.y + rocket.h - 2);
+        fill(62, 255, 20);
+        rect(rocket.x, rocket.y + 2, rocket.w - 6, rocket.h - 4, 3);
+        fill(225, 255, 205);
+        triangle(rocket.x + rocket.w - 6, rocket.y, rocket.x + rocket.w, rocket.y + rocket.h / 2, rocket.x + rocket.w - 6, rocket.y + rocket.h);
+    } else {
+        fill(255, 110, 28);
+        triangle(rocket.x + rocket.w, rocket.y + 2, rocket.x + rocket.w + 7, rocket.y + rocket.h / 2, rocket.x + rocket.w, rocket.y + rocket.h - 2);
+        fill(62, 255, 20);
+        rect(rocket.x + 6, rocket.y + 2, rocket.w - 6, rocket.h - 4, 3);
+        fill(225, 255, 205);
+        triangle(rocket.x + 6, rocket.y, rocket.x, rocket.y + rocket.h / 2, rocket.x + 6, rocket.y + rocket.h);
+    }
+}
+
+function drawPlayer() {
+    if (invulnerable > 0 && frameCount % 8 < 4) { return; }
+    var x = player.x;
+    var y = player.y;
+    noStroke();
+    if (hasPower("SHIELD") || godModeFrames > 0) {
+        stroke(107, 255, 18);
+        strokeWeight(2);
+        noFill();
+        rect(x, y + 1, 26, 35, 4);
+        noStroke();
+    }
+    fill(12, 15, 19);
+    rect(x + 7, y + 25, 5, 9, 1);
+    rect(x + 15, y + 25, 5, 9, 1);
+    fill(45, 51, 58);
+    rect(x + 6, y + 29, 6, 5, 1);
+    rect(x + 14, y + 29, 6, 5, 1);
+    fill(104, 255, 12);
+    rect(x + 4, y + 33, 9, 3, 1);
+    rect(x + 13, y + 33, 9, 3, 1);
+    fill(10, 12, 16);
+    rect(x + 6, y + 17, 14, 12, 2);
+    rect(x + 3, y + 18, 5, 9, 2);
+    rect(x + 18, y + 18, 5, 9, 2);
+    fill(36, 42, 48);
+    rect(x + 7, y + 18, 12, 9, 1);
+    fill(107, 255, 18);
+    rect(x + 9, y + 20, 3, 2);
+    rect(x + 14, y + 20, 3, 2);
+    rect(x + 11, y + 23, 4, 2);
+    rect(x + 2, y + 25, 5, 3, 1);
+    rect(x + 19, y + 25, 5, 3, 1);
+    fill(10, 12, 16);
+    rect(x + 4, y + 3, 18, 15, 4);
+    rect(x + 2, y + 8, 22, 10, 4);
+    fill(36, 42, 48);
+    rect(x + 6, y + 7, 14, 12, 3);
+    fill(6, 8, 11);
+    rect(x + 7, y + 10, 12, 8, 2);
+    fill(107, 255, 18);
+    rect(x + 8, y + 12, 4, 2);
+    rect(x + 14, y + 12, 4, 2);
+    rect(x + 9, y + 15, 2, 3);
+    rect(x + 16, y + 15, 2, 3);
+    fill(41, 48, 55);
+    rect(x + 1, y + 9, 5, 8, 2);
+    rect(x + 20, y + 9, 5, 8, 2);
+    fill(107, 255, 18);
+    rect(x + 2, y + 11, 3, 4, 1);
+    rect(x + 21, y + 11, 3, 4, 1);
+    triangle(x + 7, y + 6, x + 10, y + 1, x + 13, y + 6);
+    triangle(x + 12, y + 6, x + 16, y + 1, x + 20, y + 6);
+    rect(x + 7, y + 5, 14, 2);
+}
+
+function drawHUD() {
+    noStroke();
+    fill(28, 52, 75, 215);
+    rect(8, 8, 384, 58, 10);
+    fill(255, 255, 255);
+    textAlign(LEFT, CENTER);
+    textSize(14);
+    text("INFINITE PLATFORM DASH", 18, 21);
+    textSize(12);
+    text("Coins: " + coinsCollected + "   Score: " + score + "   Hearts: " + lives, 18, 41);
+    textSize(11);
+    text("Map " + mapNumber + " - " + themes[currentThemeIndex].name, 18, 57);
+    textAlign(RIGHT, CENTER);
+    textSize(13);
+    text("Distance: " + Math.floor(player.x / 10) + " m", 382, 22);
+    textSize(11);
+    if (godModeFrames > 0 && activeEffects.length > 0) {
+        text("GOD: " + Math.ceil(godModeFrames / 60) + "s  POWER: " + Math.ceil(powerFrames / 60) + "s", 382, 56);
+    } else if (godModeFrames > 0) {
+        text("GOD MODE: " + Math.ceil(godModeFrames / 60) + "s", 382, 56);
+    } else if (activeEffects.length > 0) {
+        text("Power: " + Math.ceil(powerFrames / 60) + "s", 382, 56);
+    } else {
+        text("Power: none", 382, 56);
+    }
+    if (rocketCharge > 0) {
+        textAlign(CENTER, CENTER);
+        fill(62, 255, 20);
+        textSize(10);
+        text("ROCKET CHARGE: " + Math.floor(rocketCharge / 90 * 100) + "%", 200, 77);
+    }
+    if (paused || showLeaderboard) { fill(79, 164, 76); }
+    else { fill(45, 73, 94); }
+    rect(238, 31, 68, 20, 4);
+    rect(310, 31, 79, 20, 4);
+    fill(255, 255, 255);
+    textAlign(CENTER, CENTER);
+    textSize(9);
+    text(paused || showLeaderboard ? "RESUME" : "PAUSE", 272, 41);
+    text("LEADERBOARD", 349, 41);
+    fill(28, 52, 75, 215);
+    rect(42, 370, 316, 22, 7);
+    fill(255, 255, 255);
+    textAlign(CENTER, CENTER);
+    textSize(9);
+    text("MOVE: ARROWS/A-D  JUMP: SPACE  Z: LASER + HOLD/RELEASE: ROCKET", 200, 381);
+}
+
+function drawPowerChoice() {
+    noStroke();
+    fill(16, 31, 50, 225);
+    rect(30, 82, 340, 238, 14);
+    fill(255, 225, 97);
+    textAlign(CENTER, CENTER);
+    textSize(coinsCollected % 100 === 0 ? 18 : 21);
+    text(coinsCollected % 100 === 0 ? coinsCollected + " COINS! GOD MODE BONUS" : "10 COINS! CHOOSE A POWER", 200, 113);
+    fill(255, 255, 255);
+    textSize(11);
+    for (var i = 0; i < offeredPowers.length; i++) {
+        text((i + 1) + " - " + offeredPowers[i].label, 200, 151 + i * 29);
+    }
+    fill(255, 225, 97);
+    textSize(12);
+    text("Every upgrade can mix different powers", 200, 270);
+    text(coinsCollected % 100 === 0 ? "GOD MODE lasts 60 seconds" : "Your choice lasts 30 seconds", 200, 292);
+}
+
+function drawPauseScreen() {
+    noStroke();
+    fill(8, 12, 20, 190);
+    rect(0, 0, width, height);
+    fill(107, 255, 18);
+    textAlign(CENTER, CENTER);
+    textSize(34);
+    text("PAUSED", 200, 170);
+    fill(255, 255, 255);
+    textSize(15);
+    text("Click RESUME or press P", 200, 210);
+}
+
+
+// ============================================================
+// LEGION STUDIOS INTRO
+// Shared studio identity: wireframe globe, PRESENTS, game preview,
+// title reveal, then the original username-entry screen.
+// ============================================================
+
+function drawWireframeGlobe(cx, cy, radius, spin) {
+    pushMatrix();
+    translate(cx, cy);
+    rotate(spin);
+    noFill();
+
+    // Outer globe.
+    stroke(107, 255, 18);
+    strokeWeight(2);
+    ellipse(0, 0, radius * 2, radius * 2);
+
+    // Longitude curves.
+    stroke(71, 206, 25, 210);
+    strokeWeight(1);
+    for (var i = 0; i < 4; i++) {
+        var angle = i * 45;
+        pushMatrix();
+        rotate(angle);
+        ellipse(0, 0, radius * (0.48 + (i % 2) * 0.35), radius * 2);
+        popMatrix();
+    }
+
+    // Latitude curves.
+    for (var j = -2; j <= 2; j++) {
+        var yy = j * radius * 0.34;
+        var wide = sqrt(max(0, radius * radius - yy * yy));
+        ellipse(0, yy, wide * 2, radius * 0.34);
+    }
+
+    // Neon meridian highlights.
+    stroke(154, 255, 90, 150);
+    arc(0, 0, radius * 1.45, radius * 2, -90, 90);
+    popMatrix();
+}
+
+function drawStudioIntro() {
+    if (introStartFrame === 0) { introStartFrame = frameCount; }
+    var elapsed = frameCount - introStartFrame;
+    var stage = floor(elapsed / 115);
+    var localFrame = elapsed % 115;
+    var pulse = 0.82 + 0.18 * sin(frameCount * 4);
+    var spin = frameCount * 0.7;
+
+    background(3, 7, 10);
+    noStroke();
+
+    // Subtle digital-rain columns.
+    textAlign(CENTER, CENTER);
+    textSize(10);
+    for (var c = 0; c < 16; c++) {
+        var rainY = (frameCount * (1 + (c % 3)) + c * 47) % 430 - 15;
+        fill(40, 130, 34, 70);
+        text("1 0 1 0", 12 + c * 25, rainY);
+    }
+
+    // Faint technical rings behind the logo.
+    noFill();
+    stroke(30, 95, 28, 90);
+    strokeWeight(1);
+    ellipse(200, 150, 190, 190);
+    ellipse(200, 150, 220, 220);
+
+    if (stage === 0) {
+        // LEGION STUDIOS logo reveal.
+        drawWireframeGlobe(200, 137, 65, spin);
+        noStroke();
+        fill(107, 255, 18);
+        textSize(31);
+        text("LEGION", 200, 239);
+        fill(220, 255, 215);
+        textSize(15);
+        text("S T U D I O S", 200, 266);
+        fill(107, 255, 18, 190);
+        rect(112, 282, 176, 2);
+        fill(180, 255, 170);
+        textSize(9);
+        text("INDEPENDENT GAME DIVISION", 200, 300);
+    } else if (stage === 1) {
+        drawWireframeGlobe(200, 112, 48, spin);
+        noStroke();
+        fill(107, 255, 18);
+        textSize(28);
+        text("P R E S E N T S", 200, 215);
+        fill(180, 255, 170);
+        textSize(10);
+        text("A LEGION STUDIOS GAME", 200, 246);
+    } else if (stage === 2) {
+        // Mini animated preview of Infinite Platform Dash.
+        fill(11, 20, 25);
+        rect(25, 65, 350, 250, 12);
+        stroke(47, 115, 36);
+        noFill();
+        rect(25, 65, 350, 250, 12);
+
+        noStroke();
+        fill(107, 255, 18);
+        textAlign(LEFT, CENTER);
+        textSize(10);
+        text("GAMEPLAY PREVIEW // SIMULATION", 42, 86);
+
+        // Floating platforms.
+        fill(57, 102, 62);
+        rect(38, 260, 95, 12, 3);
+        rect(155, 220, 85, 12, 3);
+        rect(265, 178, 95, 12, 3);
+        fill(107, 255, 18);
+        rect(38, 258, 95, 3);
+        rect(155, 218, 85, 3);
+        rect(265, 176, 95, 3);
+
+        // Coins.
+        fill(255, 218, 67);
+        ellipse(111, 229, 13, 13);
+        ellipse(216, 187, 13, 13);
+        ellipse(321, 145, 13, 13);
+
+        // A small neon runner moving across the platforms.
+        var runnerX = 55 + (localFrame * 2.25) % 270;
+        var runnerY = runnerX < 145 ? 230 : (runnerX < 250 ? 190 : 148);
+        if (runnerX > 110 && runnerX < 165) {
+            runnerY -= abs(sin(localFrame * 0.12)) * 34;
+        } else if (runnerX > 215 && runnerX < 270) {
+            runnerY -= abs(sin(localFrame * 0.12)) * 34;
+        }
+        fill(8, 12, 16);
+        rect(runnerX, runnerY - 25, 19, 24, 4);
+        fill(107, 255, 18);
+        rect(runnerX + 4, runnerY - 17, 4, 3);
+        rect(runnerX + 12, runnerY - 17, 4, 3);
+        rect(runnerX + 4, runnerY - 2, 5, 10);
+        rect(runnerX + 13, runnerY - 2, 5, 10);
+
+        // Robot on the far platform.
+        fill(65, 76, 83);
+        rect(325, 146, 20, 25, 4);
+        fill(255, 72, 62);
+        rect(329, 153, 4, 4);
+        rect(337, 153, 4, 4);
+
+        noStroke();
+        fill(205, 255, 198);
+        textAlign(CENTER, CENTER);
+        textSize(11);
+        text("RUN  //  JUMP  //  COLLECT  //  SURVIVE", 200, 292);
+    } else {
+        // Final title reveal.
+        drawWireframeGlobe(200, 92, 38, spin);
+        noStroke();
+        fill(107, 255, 18);
+        textSize(25);
+        text("INFINITE", 200, 174);
+        textSize(31);
+        text("PLATFORM DASH", 200, 207);
+        fill(210, 255, 205);
+        textSize(10);
+        text("A LEGION STUDIOS ORIGINAL", 200, 238);
+
+        // Pulsing start prompt.
+        fill(107, 255, 18, 255 * pulse);
+        rect(100, 273, 200, 38, 6);
+        fill(3, 7, 10);
+        textSize(14);
+        text("PRESS SPACE TO PLAY", 200, 292);
+        fill(180, 255, 170);
+        textSize(9);
+        text("OR CLICK TO CONTINUE", 200, 330);
+    }
+
+    // Advance automatically after the title prompt has had time to display.
+    if (elapsed >= 4 * 115) {
+        studioIntro = false;
+    }
+}
+
+function drawNameEntry() {
+    noStroke();
+    fill(8, 12, 20, 220);
+    rect(0, 0, width, height);
+    fill(107, 255, 18);
+    textAlign(CENTER, CENTER);
+    textSize(25);
+    text("INFINITE PLATFORM DASH", 200, 125);
+    fill(255, 255, 255);
+    textSize(14);
+    text("TYPE YOUR USERNAME", 200, 175);
+    fill(28, 52, 75);
+    rect(90, 195, 220, 38, 5);
+    fill(107, 255, 18);
+    textSize(18);
+    text(playerName + "_", 200, 214);
+    fill(79, 164, 76);
+    rect(130, 265, 140, 45, 6);
+    fill(255, 255, 255);
+    textSize(16);
+    text("START", 200, 288);
+    textSize(11);
+    text("Press ENTER to start", 200, 330);
+}
+
+function drawLeaderboard() {
+    noStroke();
+    fill(8, 12, 20, 210);
+    rect(0, 0, width, height);
+    fill(107, 255, 18);
+    textAlign(CENTER, CENTER);
+    textSize(25);
+    text("LOCAL LEADERBOARD", 200, 112);
+    fill(255, 255, 255);
+    textSize(12);
+    text("Scores from this open game session", 200, 137);
+    if (leaderboardScores.length === 0) {
+        textSize(15);
+        text("Finish a run to post a score", 200, 195);
+    } else {
+        textSize(13);
+        for (var i = 0; i < leaderboardScores.length; i++) {
+            var entry = leaderboardScores[i];
+            text((i + 1) + ".  " + entry.name + "   " + entry.score + " pts   " + entry.distance + " m", 200, 170 + i * 25);
+        }
+    }
+    fill(255, 225, 97);
+    textSize(12);
+    text("Click RESUME to return", 200, 310);
+}
+
+function drawEndScreen() {
+    noStroke();
+    fill(16, 31, 50, 200);
+    rect(0, 0, width, height);
+    fill(255, 225, 97);
+    textAlign(CENTER, CENTER);
+    textSize(34);
+    text("GAME OVER", width / 2, 150);
+    fill(255, 255, 255);
+    textSize(17);
+    text("Distance: " + Math.floor(player.x / 10) + " m", width / 2, 195);
+    text("Coins: " + coinsCollected, width / 2, 225);
+    textSize(14);
+    text("Press R to replay or N for a new username", width / 2, 267);
+}
+
+draw = function() {
+    if (studioIntro) {
+        drawStudioIntro();
+        return;
+    }
+    ensureWorld();
+    updateGame();
+    drawBackground();
+    pushMatrix();
+    translate(-cameraX, 0);
+    drawPlatforms();
+    for (var i = 0; i < coins.length; i++) { drawCoin(coins[i]); }
+    for (var j = 0; j < enemies.length; j++) { drawRobot(enemies[j]); }
+    drawBoss();
+    for (var k = 0; k < lasers.length; k++) { drawLaser(lasers[k]); }
+    for (var m = 0; m < playerLasers.length; m++) { drawPlayerLaser(playerLasers[m]); }
+    for (var q = 0; q < rockets.length; q++) { drawRocket(rockets[q]); }
+    drawPlayer();
+    popMatrix();
+    if (nameEntry) {
+        drawNameEntry();
+        return;
+    }
+    if (showLeaderboard) { drawLeaderboard(); }
+    else if (paused) { drawPauseScreen(); }
+    else if (choicePending) { drawPowerChoice(); }
+    else if (gameOver) { drawEndScreen(); }
+    drawHUD();
+};
+
+frameRate(60);
+resetGame();
+
+  }
+};
+new Processing(document.getElementById('gameCanvas'), sketchProc);
+document.getElementById('gameCanvas').addEventListener('click', function(){this.focus();});
+</script></body></html>

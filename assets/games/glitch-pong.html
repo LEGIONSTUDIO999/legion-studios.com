@@ -1,0 +1,19 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GLITCH PONG | LEGION STUDIOS</title><style>
+*{box-sizing:border-box}body{margin:0;background:#030806;color:#a4ff75;font-family:Arial;display:grid;place-items:center;min-height:100vh}
+.wrap{width:min(96vw,560px)}h1{text-align:center;letter-spacing:4px;font-size:22px}canvas{width:100%;aspect-ratio:1;background:#10131c;border:1px solid #42ff76;box-shadow:0 0 28px #124a24;display:block}
+p{text-align:center;color:#b4cbb8;font-size:13px}.btn{display:block;margin:12px auto;background:#8cff56;color:#061006;border:0;padding:10px 20px;font-weight:bold;cursor:pointer}
+</style></head><body><div class="wrap"><h1>GLITCH PONG</h1><canvas id="c" width="500" height="500"></canvas><p>Move your mouse or finger to control the paddle.</p><button class="btn" onclick="reset()">RESTART RUN</button></div><script>
+const c=document.getElementById('c'),x=c.getContext('2d');let py=210,bx=250,by=250,vx=4,vy=2.8,score=0,glitch=0,over=false,flash=0;
+function reset(){py=210;bx=250;by=250;vx=4;vy=2.8;score=0;glitch=0;over=false;flash=0;requestAnimationFrame(loop)}
+function move(e){let r=c.getBoundingClientRect(),y=(e.clientY-r.top)*500/r.height;py=Math.max(0,Math.min(420,y-40))}
+c.addEventListener('pointermove',move);
+function loop(){if(over)return;x.fillStyle='#111522';x.fillRect(0,0,500,500);
+if(glitch>0){bx+=(Math.random()-.5)*24;by+=(Math.random()-.5)*24;glitch--}
+x.fillStyle='#ff5a9b';x.fillRect(465,py,15,80);x.fillStyle='#00ffd0';x.beginPath();x.arc(bx,by,11,0,Math.PI*2);x.fill();
+bx+=vx;by+=vy;if(by<12||by>488)vy=-vy;if(bx<12)vx=Math.abs(vx);
+if(bx>455&&bx<480&&by>py-8&&by<py+88){vx=-Math.abs(vx)*1.06;vy+=(Math.random()-.5)*3;score++;if(Math.random()<.3)glitch=14}
+if(score>=3&&Math.random()<.006)flash=35;if(flash>0){x.fillStyle='rgba(255,0,35,.25)';x.fillRect(0,0,500,500);x.fillStyle='#ffe66d';x.font='bold 28px Arial';x.fillText('L BOZO',190+Math.random()*80,200+Math.random()*80);flash--}
+x.fillStyle='white';x.font='20px Arial';x.fillText('SCORE: '+score,18,30);
+if(bx>510){over=true;x.fillStyle='#ff405b';x.fillRect(0,0,500,500);x.fillStyle='white';x.textAlign='center';x.font='bold 34px Arial';x.fillText('SKILL ISSUE.',250,220);x.font='17px Arial';x.fillText('Final score: '+score,250,260);x.textAlign='left';return}
+requestAnimationFrame(loop)}reset();
+</script></body></html>

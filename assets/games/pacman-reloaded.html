@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PAC-MAN: RELOADED | LEGION STUDIOS</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#030806;color:#9aff65;font-family:Arial,sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh}
+header{width:100%;padding:12px 18px;border-bottom:1px solid #24552c;background:#06110a}a{color:#9aff65}h1{font-size:16px;letter-spacing:2px;margin:0}
+main{width:min(96vw,680px);padding:14px}canvas{display:block;margin:auto;max-width:100%;height:auto;border:1px solid #377b38;box-shadow:0 0 24px #143d1d;background:#050908;touch-action:none}
+.note{color:#9bb99b;font-size:12px;text-align:center;line-height:1.5}
+</style></head><body><header><h1>PAC-MAN: RELOADED</h1></header><main><canvas id="gameCanvas" width="400" height="400" tabindex="0"></canvas><p class="note">Click the game to focus it. Keyboard controls are shown in the game.</p></main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/processing.js/1.6.6/processing.min.js"></script>
+<script>
+var sketchProc = function(processing) {
+  with (processing) {
+    size(400, 400);
+    frameRate(60);
+// Pac-Man for Khan Academy (ProcessingJS)
+// Controls: Arrows/WASD = Move | P or Esc / Top Button = Pause | L = Leaderboard | R = Restart | M = Menu
+
+frameRate(60);
+
+var TILE = 20;
+var COLS = 20;
+var ROWS = 20;
+var MAX_LEVEL = 200;
+var POWER_DURATION = 18 * 60; // 18 seconds at 60 FPS
+
+// 1 = Wall, 0 = Pellet, 2 = Empty path, 3 = Power Pellet
+var BASE_MAP = [
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,3,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,3,1],
+  [1,0,1,1,0,1,1,1,0,1,1,0,1,1,1,0,1,1,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,1,1,0,1,0,1,1,1,1,1,1,0,1,0,1,1,0,1],
+  [1,0,0,0,0,1,0,0,0,1,1,0,0,0,1,0,0,0,0,1],
+  [1,1,1,1,0,1,1,1,2,1,1,2,1,1,1,0,1,1,1,1],
+  [2,2,2,1,0,1,2,2,2,2,2,2,2,2,1,0,1,2,2,2],
+  [1,1,1,1,0,1,2,1,1,2,2,1,1,2,1,0,1,1,1,1],
+  [2,2,2,2,0,2,2,1,2,2,2,2,1,2,2,0,2,2,2,2],
+  [1,1,1,1,0,1,2,1,1,1,1,1,1,2,1,0,1,1,1,1],
+  [2,2,2,1,0,1,2,2,2,2,2,2,2,2,1,0,1,2,2,2],
+  [1,1,1,1,0,1,2,1,1,1,1,1,1,2,1,0,1,1,1,1],
+  [1,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,1],
+  [1,0,1,1,0,1,1,1,0,1,1,0,1,1,1,0,1,1,0,1],
+  [1,3,0,1,0,0,0,0,0,2,2,0,0,0,0,0,1,0,3,1],
+  [1,1,0,1,0,1,0,1,1,1,1,1,1,0,1,0,1,0,1,1],
+  [1,0,0,0,0,1,0,0,0,1,1,0,0,0,1,0,0,0,0,1],
+  [1,0,1,1,1,1,1,1,0,1,1,0,1,1,1,1,1,1,0,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+];
+
+var grid = [];
+var score = 0;
+var lives = 3;
+var level = 0;
+var gameMode = "standard"; // "standard" or "freeplay"
+var gameState = "menu"; // "menu", "playing", "paused", "won", "gameover"
+var previousState = "playing";
+var powerTimer = 0;
+var showBoardPeek = false;
+var scoreRecorded = false;
+
+var leaderboard = [
+  { label: "ACE", score: 1500 },
+  { label: "PRO", score: 1000 },
+  { label: "RUN", score: 500 }
+];
+
+var pauseBtn = { x: 162, y: 2, w: 76, h: 16 };
+var menuStandardBtn = { x: 85, y: 152, w: 230, h: 38 };
+var menuFreePlayBtn = { x: 85, y: 200, w: 230, h: 38 };
+var overlayMenuBtn = { x: 135, y: 316, w: 130, h: 28 };
+
+var pac = {
+  x: 9.5 * TILE,
+  y: 15.5 * TILE,
+  r: 8,
+  speed: 2.2,
+  dir: { x: 0, y: 0 },
+  nextDir: { x: 0, y: 0 },
+  mouthAngle: 25,
+  mouthOpening: true
+};
+
+var ghosts = [];
+
+function cloneMap() {
+  var copy = [];
+  for (var r = 0; r < ROWS; r++) {
+    copy[r] = BASE_MAP[r].slice();
+  }
+  return copy;
+}
+
+function getGhostSpeed() {
+  var scaled = 1.45 + min(level, MAX_LEVEL) * 0.0035;
+  return min(scaled, 2.05);
+}
+
+function createGhosts() {
+  var spd = getGhostSpeed();
+  return [
+    { x: 9.5 * TILE, y: 8.5 * TILE, r: 8, speed: spd, dir: { x: -1, y: 0 }, color: color(255, 65, 65) },
+    { x: 10.5 * TILE, y: 8.5 * TILE, r: 8, speed: spd, dir: { x: 1, y: 0 }, color: color(255, 140, 210) },
+    { x: 9.5 * TILE, y: 9.5 * TILE, r: 8, speed: spd, dir: { x: 0, y: -1 }, color: color(75, 225, 255) },
+    { x: 10.5 * TILE, y: 9.5 * TILE, r: 8, speed: spd, dir: { x: 0, y: 1 }, color: color(255, 180, 60) }
+  ];
+}
+
+function resetPositions() {
+  pac.x = 9.5 * TILE;
+  pac.y = 15.5 * TILE;
+  pac.dir = { x: 0, y: 0 };
+  pac.nextDir = { x: 0, y: 0 };
+  ghosts = createGhosts();
+  powerTimer = 0;
+}
+
+function recordScoreIfNeeded() {
+  if (scoreRecorded || score <= 0) {
+    return;
+  }
+  scoreRecorded = true;
+  var tag = (gameMode === "freeplay" ? "FP" : "L" + level);
+  leaderboard.push({ label: tag, score: score });
+  leaderboard.sort(function (a, b) {
+    return b.score - a.score;
+  });
+  if (leaderboard.length > 5) {
+    leaderboard.length = 5;
+  }
+}
+
+function finishGame(nextState) {
+  gameState = nextState;
+  showBoardPeek = false;
+  recordScoreIfNeeded();
+}
+
+function togglePause() {
+  if (gameState === "playing") {
+    previousState = "playing";
+    gameState = "paused";
+  } else if (gameState === "paused") {
+    gameState = previousState;
+  }
+}
+
+function startNewRun(mode) {
+  gameMode = mode;
+  grid = cloneMap();
+  score = 0;
+  lives = 3;
+  level = 0;
+  gameState = "playing";
+  previousState = "playing";
+  showBoardPeek = false;
+  scoreRecorded = false;
+  resetPositions();
+}
+
+function advanceToNextLevel() {
+  if (level < MAX_LEVEL) {
+    level += 1;
+    grid = cloneMap();
+    resetPositions();
+  } else {
+    finishGame("won");
+  }
+}
+
+function isWallAtPixel(px, py) {
+  var col = floor(px / TILE);
+  var row = floor(py / TILE);
+  if (row < 0 || row >= ROWS) {
+    return true;
+  }
+  if (col < 0 || col >= COLS) {
+    return row !== 9;
+  }
+  return grid[row][col] === 1;
+}
+
+function canMove(entity, dx, dy) {
+  var step = entity.speed;
+  var checkR = entity.r - 1;
+  var nx = entity.x + dx * step;
+  var ny = entity.y + dy * step;
+
+  return (
+    !isWallAtPixel(nx - checkR, ny - checkR) &&
+    !isWallAtPixel(nx + checkR, ny - checkR) &&
+    !isWallAtPixel(nx - checkR, ny + checkR) &&
+    !isWallAtPixel(nx + checkR, ny + checkR)
+  );
+}
+
+function wrapEntity(entity) {
+  if (entity.x < -TILE / 2) {
+    entity.x = width + TILE / 2;
+  } else if (entity.x > width + TILE / 2) {
+    entity.x = -TILE / 2;
+  }
+}
+
+function eatPellets() {
+  var col = floor(pac.x / TILE);
+  var row = floor(pac.y / TILE);
+  if (row < 0 || row >= ROWS || col < 0 || col >= COLS) {
+    return;
+  }
+
+  var cell = grid[row][col];
+  if (cell === 0) {
+    grid[row][col] = 2;
+    score += 10;
+  } else if (cell === 3) {
+    grid[row][col] = 2;
+    score += 50;
+    powerTimer = POWER_DURATION; // 18 seconds at 60 FPS
+  }
+
+  var remaining = 0;
+  for (var r = 0; r < ROWS; r++) {
+    for (var c = 0; c < COLS; c++) {
+      if (grid[r][c] === 0 || grid[r][c] === 3) {
+        remaining += 1;
+      }
+    }
+  }
+
+  if (remaining === 0) {
+    if (gameMode === "freeplay") {
+      grid = cloneMap();
+      if (level < MAX_LEVEL) {
+        level += 1;
+      }
+      ghosts = createGhosts();
+    } else {
+      advanceToNextLevel();
+    }
+  }
+}
+
+function updatePacman() {
+  if (pac.nextDir.x !== 0 || pac.nextDir.y !== 0) {
+    if (canMove(pac, pac.nextDir.x, pac.nextDir.y)) {
+      pac.dir.x = pac.nextDir.x;
+      pac.dir.y = pac.nextDir.y;
+    }
+  }
+
+  if (canMove(pac, pac.dir.x, pac.dir.y)) {
+    pac.x += pac.dir.x * pac.speed;
+    pac.y += pac.dir.y * pac.speed;
+  }
+
+  wrapEntity(pac);
+  eatPellets();
+
+  if (pac.mouthOpening) {
+    pac.mouthAngle += 4;
+    if (pac.mouthAngle >= 38) {
+      pac.mouthOpening = false;
+    }
+  } else {
+    pac.mouthAngle -= 4;
+    if (pac.mouthAngle <= 4) {
+      pac.mouthOpening = true;
+    }
+  }
+}
+
+function updateGhosts() {
+  if (powerTimer > 0) {
+    powerTimer -= 1;
+  }
+
+  var dirs = [
+    { x: 1, y: 0 },
+    { x: -1, y: 0 },
+    { x: 0, y: 1 },
+    { x: 0, y: -1 }
+  ];
+
+  for (var i = 0; i < ghosts.length; i++) {
+    var g = ghosts[i];
+    var valid = [];
+
+    for (var d = 0; d < dirs.length; d++) {
+      var candidate = dirs[d];
+      var isReverse = candidate.x === -g.dir.x && candidate.y === -g.dir.y;
+      if (!isReverse && canMove(g, candidate.x, candidate.y)) {
+        valid.push(candidate);
+      }
+    }
+
+    if (valid.length === 0 && canMove(g, -g.dir.x, -g.dir.y)) {
+      valid.push({ x: -g.dir.x, y: -g.dir.y });
+    }
+
+    if (valid.length > 0) {
+      var chosen = valid[0];
+      var bestDist = powerTimer > 0 ? -999999 : 999999;
+
+      for (var v = 0; v < valid.length; v++) {
+        var opt = valid[v];
+        var testX = g.x + opt.x * g.speed;
+        var testY = g.y + opt.y * g.speed;
+        var distSq = pow(testX - pac.x, 2) + pow(testY - pac.y, 2);
+
+        if (powerTimer > 0) {
+          if (distSq > bestDist) {
+            bestDist = distSq;
+            chosen = opt;
+          }
+        } else {
+          if (distSq < bestDist) {
+            bestDist = distSq;
+            chosen = opt;
+          }
+        }
+      }
+
+      if (random(1) < 0.12) {
+        chosen = valid[floor(random(valid.length))];
+      }
+      g.dir = chosen;
+    }
+
+    if (canMove(g, g.dir.x, g.dir.y)) {
+      g.x += g.dir.x * g.speed;
+      g.y += g.dir.y * g.speed;
+    }
+    wrapEntity(g);
+
+    var hitDist = dist(pac.x, pac.y, g.x, g.y);
+    if (hitDist < pac.r + g.r - 2) {
+      if (powerTimer > 0) {
+        score += 200;
+        g.x = 10 * TILE;
+        g.y = 8.5 * TILE;
+        g.dir = { x: 0, y: -1 };
+      } else {
+        lives -= 1;
+        if (lives <= 0) {
+          lives = 0;
+          finishGame("gameover");
+        } else {
+          resetPositions();
+        }
+        break;
+      }
+    }
+  }
+}
+
+function drawBoard() {
+  background(10, 12, 28);
+
+  for (var r = 0; r < ROWS; r++) {
+    for (var c = 0; c < COLS; c++) {
+      var cell = grid[r][c];
+      var x = c * TILE;
+      var y = r * TILE;
+
+      if (cell === 1) {
+        fill(25, 55, 210);
+        stroke(75, 115, 255);
+        strokeWeight(1.5);
+        rect(x + 1, y + 1, TILE - 2, TILE - 2, 4);
+      } else if (cell === 0) {
+        noStroke();
+        fill(255, 215, 150);
+        ellipse(x + TILE / 2, y + TILE / 2, 4, 4);
+      } else if (cell === 3) {
+        noStroke();
+        fill(255, 235, 175);
+        ellipse(x + TILE / 2, y + TILE / 2, 10, 10);
+      }
+    }
+  }
+}
+
+function drawPacman() {
+  var angleOffset = 0;
+  if (pac.dir.x === -1) {
+    angleOffset = 180;
+  } else if (pac.dir.y === -1) {
+    angleOffset = 270;
+  } else if (pac.dir.y === 1) {
+    angleOffset = 90;
+  }
+
+  pushMatrix();
+  translate(pac.x, pac.y);
+  rotate(angleOffset);
+  noStroke();
+  fill(255, 225, 0);
+  arc(0, 0, pac.r * 2, pac.r * 2, pac.mouthAngle, 360 - pac.mouthAngle);
+  popMatrix();
+}
+
+function drawGhosts() {
+  for (var i = 0; i < ghosts.length; i++) {
+    var g = ghosts[i];
+    pushMatrix();
+    translate(g.x, g.y);
+    noStroke();
+
+    if (powerTimer > 0) {
+      fill(powerTimer < 150 && frameCount % 12 < 6 ? color(240, 240, 255) : color(35, 80, 235));
+    } else {
+      fill(g.color);
+    }
+
+    arc(0, 0, g.r * 2, g.r * 2, 180, 360);
+    rect(-g.r, 0, g.r * 2, g.r * 0.85);
+
+    fill(255);
+    ellipse(-3.5, -2, 5, 6);
+    ellipse(3.5, -2, 5, 6);
+    fill(20, 20, 40);
+    ellipse(-3.5 + g.dir.x * 1.5, -2 + g.dir.y * 1.5, 2.5, 3);
+    ellipse(3.5 + g.dir.x * 1.5, -2 + g.dir.y * 1.5, 2.5, 3);
+
+    popMatrix();
+  }
+}
+
+function isInRect(px, py, box) {
+  return px >= box.x && px <= box.x + box.w && py >= box.y && py <= box.y + box.h;
+}
+
+function drawButton(box, label, activeFill) {
+  var hover = isInRect(mouseX, mouseY, box);
+  fill(hover ? activeFill : color(35, 48, 105));
+  stroke(130, 165, 255);
+  strokeWeight(1.5);
+  rect(box.x, box.y, box.w, box.h, 8);
+
+  noStroke();
+  fill(hover ? color(15, 18, 35) : color(255));
+  textAlign(CENTER, CENTER);
+  textSize(12);
+  text(label, box.x + box.w / 2, box.y + box.h / 2 + 0.5);
+}
+
+function drawHud() {
+  fill(255);
+  textSize(11);
+  textAlign(LEFT, TOP);
+  text("LVL " + level + "  |  " + score, 6, 4);
+
+  textAlign(RIGHT, TOP);
+  var rightText = gameMode === "freeplay" ? "FREE" : "LIVES: " + lives;
+  if (powerTimer > 0) {
+    rightText += "  |  " + ceil(powerTimer / 60) + "s";
+  }
+  text(rightText, width - 6, 4);
+
+  if (gameState === "playing" || gameState === "paused") {
+    var hovering = isInRect(mouseX, mouseY, pauseBtn);
+    if (gameState === "paused") {
+      fill(hovering ? color(255, 210, 40) : color(240, 185, 20));
+    } else {
+      fill(hovering ? color(55, 70, 130) : color(35, 45, 95));
+    }
+    stroke(130, 165, 255);
+    strokeWeight(1);
+    rect(pauseBtn.x, pauseBtn.y, pauseBtn.w, pauseBtn.h, 8);
+
+    noStroke();
+    fill(gameState === "paused" ? color(15, 18, 35) : color(255));
+    textSize(10);
+    textAlign(CENTER, CENTER);
+    text(gameState === "paused" ? "RESUME" : "PAUSE", pauseBtn.x + pauseBtn.w / 2, pauseBtn.y + pauseBtn.h / 2 + 0.5);
+  }
+}
+
+function drawLeaderboardBox(boxY, boxH) {
+  fill(16, 20, 44, 235);
+  stroke(90, 130, 255);
+  strokeWeight(1.5);
+  rect(70, boxY, 260, boxH, 10);
+
+  noStroke();
+  fill(255, 225, 0);
+  textAlign(CENTER, TOP);
+  textSize(14);
+  text("TOP SCORES", width / 2, boxY + 8);
+
+  textSize(12);
+  for (var i = 0; i < leaderboard.length; i++) {
+    var entry = leaderboard[i];
+    var rowY = boxY + 28 + i * 19;
+    fill(235, 240, 255);
+    textAlign(LEFT, TOP);
+    text((i + 1) + ". " + entry.label, 92, rowY);
+
+    fill(140, 225, 255);
+    textAlign(RIGHT, TOP);
+    text(entry.score, 308, rowY);
+  }
+}
+
+function drawMainMenu() {
+  fill(0, 0, 0, 195);
+  rect(0, 0, width, height);
+
+  fill(255, 225, 0);
+  textAlign(CENTER, CENTER);
+  textSize(30);
+  text("PAC-MAN: RELOADED", width / 2, 76);
+
+  fill(190, 215, 255);
+  textSize(12);
+  text("Levels 0-200  |  18s Power Pellets", width / 2, 112);
+
+  drawButton(menuStandardBtn, "START GAME (LVL 0-200)", color(255, 215, 40));
+  drawButton(menuFreePlayBtn, "FREE PLAY MODE", color(110, 235, 160));
+
+  fill(215);
+  textSize(11);
+  textAlign(CENTER, CENTER);
+  text("Arrows/WASD to Move  |  P to Pause  |  L for Scores", width / 2, 272);
+}
+
+function drawOverlay(titleText, subText, includeBoard) {
+  fill(0, 0, 0, 180);
+  rect(0, 0, width, height);
+
+  if (includeBoard) {
+    fill(255, 225, 0);
+    textAlign(CENTER, CENTER);
+    textSize(24);
+    text(titleText, width / 2, 42);
+
+    drawLeaderboardBox(66, 136);
+
+    fill(240);
+    textSize(12);
+    textAlign(CENTER, CENTER);
+    text(subText, width / 2, 226);
+
+    drawButton(overlayMenuBtn, "MAIN MENU", color(255, 215, 40));
+  } else {
+    fill(255, 225, 0);
+    textAlign(CENTER, CENTER);
+    textSize(28);
+    text(titleText, width / 2, height / 2 - 28);
+
+    fill(240);
+    textSize(12);
+    text(subText, width / 2, height / 2 + 4);
+
+    drawButton(overlayMenuBtn, "MAIN MENU", color(255, 215, 40));
+  }
+}
+
+mousePressed = function () {
+  if (gameState === "menu") {
+    if (isInRect(mouseX, mouseY, menuStandardBtn)) {
+      startNewRun("standard");
+    } else if (isInRect(mouseX, mouseY, menuFreePlayBtn)) {
+      startNewRun("freeplay");
+    }
+    return;
+  }
+
+  if ((gameState === "playing" || gameState === "paused") && isInRect(mouseX, mouseY, pauseBtn)) {
+    togglePause();
+    return;
+  }
+
+  if ((gameState === "paused" || gameState === "gameover" || gameState === "won") && isInRect(mouseX, mouseY, overlayMenuBtn)) {
+    gameState = "menu";
+    showBoardPeek = false;
+  }
+};
+
+keyPressed = function () {
+  if (key === "m" || key === "M") {
+    gameState = "menu";
+    showBoardPeek = false;
+    return;
+  }
+
+  if (gameState === "menu") {
+    if (key === " " || keyCode === ENTER) {
+      startNewRun("standard");
+    }
+    return;
+  }
+
+  if (key === "p" || key === "P" || keyCode === 27) {
+    togglePause();
+    return;
+  }
+
+  if ((key === "l" || key === "L") && (gameState === "playing" || gameState === "paused")) {
+    showBoardPeek = !showBoardPeek;
+    return;
+  }
+
+  if (gameState === "playing") {
+    if (keyCode === LEFT || key === "a" || key === "A") {
+      pac.nextDir = { x: -1, y: 0 };
+    } else if (keyCode === RIGHT || key === "d" || key === "D") {
+      pac.nextDir = { x: 1, y: 0 };
+    } else if (keyCode === UP || key === "w" || key === "W") {
+      pac.nextDir = { x: 0, y: -1 };
+    } else if (keyCode === DOWN || key === "s" || key === "S") {
+      pac.nextDir = { x: 0, y: 1 };
+    }
+  } else if ((key === "r" || key === "R") && (gameState === "gameover" || gameState === "won")) {
+    startNewRun(gameMode);
+  }
+};
+
+grid = cloneMap();
+resetPositions();
+
+draw = function () {
+  drawBoard();
+
+  if (gameState === "playing") {
+    updatePacman();
+    updateGhosts();
+  }
+
+  if (gameState !== "menu") {
+    drawPacman();
+    drawGhosts();
+    drawHud();
+  }
+
+  if (gameState === "menu") {
+    drawMainMenu();
+  } else if (gameState === "paused") {
+    drawOverlay("PAUSED", "Click RESUME or press P  |  L = Leaderboard", showBoardPeek);
+  } else if (showBoardPeek) {
+    drawLeaderboardBox(85, 145);
+  } else if (gameState === "gameover") {
+    drawOverlay("GAME OVER", "Score: " + score + "  |  Press R to Restart", true);
+  } else if (gameState === "won") {
+    drawOverlay("YOU WIN!", "Score: " + score + "  |  Press R to Play Again", true);
+  }
+};
+  }
+};
+new Processing(document.getElementById('gameCanvas'), sketchProc);
+document.getElementById('gameCanvas').addEventListener('click', function(){this.focus();});
+</script></body></html>
